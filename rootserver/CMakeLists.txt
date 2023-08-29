@@ -23,10 +23,11 @@ sel4_projects_libs_import_libraries()
 
 file(
     GLOB
+        static
         src/*.c
 )
 
-add_executable(sel4service-rootserver)
+add_executable(sel4service-rootserver EXCLUDE_FROM_ALL ${static})
 target_link_libraries(
     sel4service-rootserver
     PUBLIC

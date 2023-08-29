@@ -11,7 +11,7 @@ static void root_exit(int code)
 int main(void) {
     /* Set exit handler */
     sel4runtime_set_exit(root_exit);
-
+    
     printf("\n");
     printf("seL4 root server\n");
     printf("================\n");

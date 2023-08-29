@@ -17,12 +17,12 @@ set(OPENSBI_PATH "${project_dir}/tools/opensbi" CACHE STRING "OpenSBI Folder loc
 include(application_settings)
 include(${CMAKE_CURRENT_LIST_DIR}/easy-settings.cmake)
 
-# Import seL4 kernel
+# Platform check an setup
+correct_platform_strings()
+
 find_package(seL4 REQUIRED)
 sel4_configure_platform_settings()
 
-# Platform check an setup
-correct_platform_strings()
 set(valid_platforms ${KernelPlatform_all_strings} ${correct_platform_strings_platform_aliases})
 set_property(CACHE PLATFORM PROPERTY STRINGS ${valid_platforms})
 if(NOT "${PLATFORM}" IN_LIST valid_platforms)
@@ -40,4 +40,8 @@ if(SMP)
     endif()
 else()
     set(KernelMaxNumNodes 1 CACHE STRING "" FORCE)
+endif()
+
+if(UINTR)
+    set(KernelRiscvUintr ON CACHE STRING "" FORCE)
 endif()
