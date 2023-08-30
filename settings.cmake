@@ -17,6 +17,9 @@ set(OPENSBI_PATH "${project_dir}/tools/opensbi" CACHE STRING "OpenSBI Folder loc
 include(application_settings)
 include(${CMAKE_CURRENT_LIST_DIR}/easy-settings.cmake)
 
+# Advanced mode OFF by default
+set(SEL4_CONFIG_DEFAULT_ADVANCED ON)
+
 # Platform check an setup
 correct_platform_strings()
 
