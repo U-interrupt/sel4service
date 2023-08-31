@@ -2,22 +2,25 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include <sel4runtime.h>
-
 #include <allocman/bootstrap.h>
 #include <allocman/vka.h>
+
+#include <cpio/cpio.h>
 
 #include <sel4platsupport/bootinfo.h>
 #include <sel4platsupport/io.h>
 #include <sel4platsupport/platsupport.h>
+
+#include <sel4runtime.h>
 
 #include <sel4utils/stack.h>
 
 #include <simple-default/simple-default.h>
 #include <simple/simple.h>
 
+#include <vspace/vspace.h>
+
 #include "env.h"
-#include "vspace/vspace.h"
 
 /* Environment encapsulating allocation interfaces etc */
 struct root_env env;
@@ -31,6 +34,13 @@ static char allocator_mem_pool[ALLOCATOR_STATIC_POOL_SIZE];
 
 /* static memory for virtual memory bootstrapping */
 static sel4utils_alloc_data_t data;
+
+extern char _cpio_archive[];
+extern char _cpio_archive_end[];
+
+#define CSPACE_SIZE_BITS 17
+
+#define MAX_ARG_NUM 10
 
 /* Initialise our runtime environment */
 static void init_env(root_env_t env) {
@@ -74,11 +84,36 @@ static void init_env(root_env_t env) {
   ZF_LOGF_IF(error, "Failed to initialise IO ops");
 }
 
+/* Start a new process running client */
+static void run_app(root_env_t env, const char *image_name, int argc,
+                    char *argv[]) {
+  int error;
+  sel4utils_process_config_t config;
+
+  config =
+      process_config_default_simple(&env->simple, image_name, seL4_MaxPrio - 1);
+  config = process_config_mcp(config, seL4_MaxPrio);
+  config = process_config_auth(config, simple_get_tcb(&env->simple));
+  config = process_config_create_cnode(config, CSPACE_SIZE_BITS);
+  error = sel4utils_configure_process_custom(&env->app, &env->vka, &env->vspace,
+                                             config);
+
+  error = sel4utils_spawn_process_v(&env->app, &env->vka, &env->vspace, argc,
+                                    argv, 1);
+  ZF_LOGF_IF(error != 0, "Failed to start test process!");
+}
+
 void *main_continued(void *arg UNUSED) {
   printf("\n");
   printf("sel4service rootserver\n");
   printf("======================\n");
   printf("\n");
+
+  char *argv[2];
+  argv[0] = "./sqlite-bench";
+  argv[1] = "--help";
+  run_app(&env, "sqlite3", 2, argv);
+
   return 0;
 }
 
@@ -102,6 +137,7 @@ int main(void) {
   /* Initialise the environment - allocator, cspace manager, vspace manager */
   init_env(&env);
 
+  /* Setup serial server */
   platsupport_serial_setup_simple(&env.vspace, &env.simple, &env.vka);
 
   /* Print bootinfo */

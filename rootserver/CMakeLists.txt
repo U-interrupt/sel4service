@@ -21,13 +21,18 @@ sel4_libs_import_libraries()
 set(LibNanopb ON CACHE BOOL "" FORCE)
 sel4_projects_libs_import_libraries()
 
+# Build sqlite3 image
+add_subdirectory(../sqlite3 sqlite3)
+include(cpio)
+MakeCPIO(sqlite.o "$<TARGET_FILE:sqlite3>")
+
 file(
     GLOB
         static
         src/*.c
 )
 
-add_executable(sel4service-rootserver EXCLUDE_FROM_ALL ${static})
+add_executable(sel4service-rootserver EXCLUDE_FROM_ALL ${static} sqlite.o)
 target_link_libraries(
     sel4service-rootserver
     PUBLIC
@@ -39,7 +44,6 @@ target_link_libraries(
         sel4vka
         sel4utils
         sel4rpc
-        sel4test
         sel4platsupport
         sel4muslcsys
 )

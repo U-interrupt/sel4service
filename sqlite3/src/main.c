@@ -139,10 +139,21 @@ void print_usage(const char* argv0) {
   fprintf(stderr, "  readseq\tread N times sequentially\n");
   fprintf(stderr, "  readrandom\tread N times in random order\n");
   fprintf(stderr, "  readrand100K\tread N/1000 100K values in sequential order in async mode\n");
+}
 
+void __plat_putchar(int c);
+static size_t write_buf(void *data, size_t count)
+{
+    char *buf = data;
+    for (int i = 0; i < count; i++) {
+        __plat_putchar(buf[i]);
+    }
+    return count;
 }
 
 int main(int argc, char** argv) {
+  sel4muslcsys_register_stdio_write_fn(write_buf);
+
   init();
 
   char* default_db_path = malloc(sizeof(char) * 1024);

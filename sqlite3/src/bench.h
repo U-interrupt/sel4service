@@ -16,6 +16,10 @@
 #include <string.h>
 #include <sys/time.h>
 #include <time.h>
+
+#include <arch_stdio.h>
+#include <sel4/sel4.h>
+
 #include "sqlite3.h"
 
 #define kNumBuckets 154

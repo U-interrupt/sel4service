@@ -14,11 +14,20 @@ struct root_env {
 
   /* virtual memory management interface */
   vspace_t vspace;
-  
+
   /* abtracts over kernel version and boot environment */
   simple_t simple;
 
   /* IO ops for devices */
   ps_io_ops_t ops;
+
+  /* Target client using POSIX syscalls */
+  sel4utils_process_t app;
+
+  /* xv6 filesystem server */
+  sel4utils_process_t fs;
+
+  /* RAM Disk device driver */
+  sel4utils_process_t ramdisk;
 };
 typedef struct root_env *root_env_t;

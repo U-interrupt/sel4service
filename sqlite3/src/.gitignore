@@ -3,3 +3,5 @@ sqlite-bench
 *.db
 *.db-shm
 *.db-wal
+
+*.log
