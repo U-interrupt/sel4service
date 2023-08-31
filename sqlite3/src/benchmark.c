@@ -221,8 +221,9 @@ void benchmark_init() {
   num_ = FLAGS_num;
   reads_ = FLAGS_reads < 0 ? FLAGS_num : FLAGS_reads;
   bytes_ = 0;
+
   rand_gen_init(&gen_, FLAGS_compression_ratio);
-  rand_init(&rand_, 301);;
+  rand_init(&rand_, 301);
 
   struct dirent* ep;
   DIR* test_dir = opendir(FLAGS_db);

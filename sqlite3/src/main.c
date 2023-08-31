@@ -2,6 +2,10 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file. See the AUTHORS file for names of contributors.
 
+#include <arch_stdio.h>
+#include <sel4/sel4.h>
+#include <service/syscall.h>
+
 #include "bench.h"
 
 // Comma-separated list of operations to run in the specified order
@@ -141,18 +145,10 @@ void print_usage(const char* argv0) {
   fprintf(stderr, "  readrand100K\tread N/1000 100K values in sequential order in async mode\n");
 }
 
-void __plat_putchar(int c);
-static size_t write_buf(void *data, size_t count)
-{
-    char *buf = data;
-    for (int i = 0; i < count; i++) {
-        __plat_putchar(buf[i]);
-    }
-    return count;
-}
+
 
 int main(int argc, char** argv) {
-  sel4muslcsys_register_stdio_write_fn(write_buf);
+  init_syscall_table();
 
   init();
 

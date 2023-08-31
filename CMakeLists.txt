@@ -22,6 +22,6 @@ add_subdirectory(rootserver)
 if(SIMULATION)
     include(simulation)
     # Set QEMU memory size
-    # SetSimulationScriptProperty(MEM_SIZE "2G")
+    SetSimulationScriptProperty(MEM_SIZE "2G")
     GenerateSimulateScript()
 endif()

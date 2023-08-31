@@ -70,13 +70,13 @@ void rand_gen_init(RandomGenerator* gen_, double compression_ratio) {
   Random rnd;
   char* piece;
   
-  gen_->data_ = malloc(sizeof(char) * 1048576);
+  gen_->data_ = malloc(sizeof(char) * 1024);
   gen_->data_size_ = 0;
   gen_->pos_ = 0;
   (gen_->data_)[0] = '\0';
 
   rand_init(&rnd, 301);
-  while (gen_->data_size_ < 1048576) {
+  while (gen_->data_size_ < 1024) {
     piece = compressible_string(&rnd, compression_ratio, 100);
     strcat(gen_->data_, piece);
     gen_->data_size_ += strlen(piece);

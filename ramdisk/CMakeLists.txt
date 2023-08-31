@@ -1,13 +1,12 @@
 cmake_minimum_required(VERSION 3.7.2)
 
-project(sqlite3 C)
+project(ramdisk C)
 
 file(GLOB src src/*.c)
-list(FILTER src EXCLUDE REGEX "shell.c")
 
-add_executable(sqlite3 EXCLUDE_FROM_ALL ${src})
+add_executable(ramdisk EXCLUDE_FROM_ALL ${src})
 target_link_libraries(
-    sqlite3
+    ramdisk
     PUBLIC
         sel4_autoconf
         muslc

@@ -23,8 +23,18 @@ sel4_projects_libs_import_libraries()
 
 # Build sqlite3 image
 add_subdirectory(../sqlite3 sqlite3)
+
+# Build xv6fs server image
+add_subdirectory(../xv6fs xv6fs)
+
+# Build ramdisk driver image
+add_subdirectory(../ramdisk ramdisk)
+
+# Build CPIO archive
 include(cpio)
-MakeCPIO(sqlite.o "$<TARGET_FILE:sqlite3>")
+set(cpio_files "")
+list(APPEND cpio_files "$<TARGET_FILE:sqlite3>" "$<TARGET_FILE:xv6fs>" "$<TARGET_FILE:ramdisk>")
+MakeCPIO(archive.o "${cpio_files}")
 
 file(
     GLOB
@@ -32,7 +42,7 @@ file(
         src/*.c
 )
 
-add_executable(sel4service-rootserver EXCLUDE_FROM_ALL ${static} sqlite.o)
+add_executable(sel4service-rootserver EXCLUDE_FROM_ALL ${static} archive.o)
 target_link_libraries(
     sel4service-rootserver
     PUBLIC
@@ -46,6 +56,7 @@ target_link_libraries(
         sel4rpc
         sel4platsupport
         sel4muslcsys
+        sel4service
 )
 target_compile_options(sel4service-rootserver PRIVATE -Werror -g)
 

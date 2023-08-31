@@ -21,6 +21,9 @@
 #include <vspace/vspace.h>
 
 #include "env.h"
+#include "sched.h"
+#include "sel4/simple_types.h"
+#include "sel4utils/thread.h"
 
 /* Environment encapsulating allocation interfaces etc */
 struct root_env env;
@@ -85,8 +88,8 @@ static void init_env(root_env_t env) {
 }
 
 /* Start a new process running client */
-static void run_app(root_env_t env, const char *image_name, int argc,
-                    char *argv[]) {
+static void run_app(root_env_t env, sel4utils_process_t *app, const char *image_name, int argc,
+                    char *argv[], int resume, int affinity) {
   int error;
   sel4utils_process_config_t config;
 
@@ -95,24 +98,33 @@ static void run_app(root_env_t env, const char *image_name, int argc,
   config = process_config_mcp(config, seL4_MaxPrio);
   config = process_config_auth(config, simple_get_tcb(&env->simple));
   config = process_config_create_cnode(config, CSPACE_SIZE_BITS);
-  error = sel4utils_configure_process_custom(&env->app, &env->vka, &env->vspace,
+  config.sched_params.core = (seL4_Word)affinity;
+  error = sel4utils_configure_process_custom(app, &env->vka, &env->vspace,
                                              config);
-
-  error = sel4utils_spawn_process_v(&env->app, &env->vka, &env->vspace, argc,
-                                    argv, 1);
-  ZF_LOGF_IF(error != 0, "Failed to start test process!");
+  
+  ZF_LOGF_IF(error != 0, "Failed to config process %s!", image_name);
+  error = sel4utils_spawn_process_v(app, &env->vka, &env->vspace, argc,
+                                    argv, resume);
+  ZF_LOGF_IF(error != 0, "Failed to start process %s!", image_name);
 }
 
 void *main_continued(void *arg UNUSED) {
+  char *argv[2];
+
   printf("\n");
   printf("sel4service rootserver\n");
   printf("======================\n");
   printf("\n");
 
-  char *argv[2];
+  argv[0] = "./xv6fs";
+  run_app(&env, &env.fs, "xv6fs", 1, argv, 1, 1);
+
+  argv[0] = "./ramdisk";
+  run_app(&env, &env.ramdisk, "ramdisk", 1, argv, 1, 2);
+
   argv[0] = "./sqlite-bench";
-  argv[1] = "--help";
-  run_app(&env, "sqlite3", 2, argv);
+  argv[1] = "--benchmarks=readseq";
+  run_app(&env, &env.app, "sqlite3", 2, argv, 1, 3);
 
   return 0;
 }
@@ -129,6 +141,10 @@ int main(void) {
   sel4runtime_set_exit(root_exit);
 
   info = platsupport_get_bootinfo();
+
+  /* Check SMP */
+  assert(info->nodeID == 0);
+  assert(info->numNodes == 4);
 
   /* Initialise libsel4simple, which abstracts away which kernel version we are
    * running on */
