@@ -4,6 +4,7 @@
 
 #include <arch_stdio.h>
 #include <sel4/sel4.h>
+#include <service/env.h>
 #include <service/syscall.h>
 
 #include "bench.h"
@@ -23,7 +24,7 @@
 //   readseq       -- read N times sequentially
 //   readrandom    -- read N times in random order
 //   readrand100K  -- read N/1000 100K values in sequential order in async mode
-char* FLAGS_benchmarks;
+char *FLAGS_benchmarks;
 
 // Number of key/values to place in database
 int FLAGS_num;
@@ -63,7 +64,7 @@ bool FLAGS_transaction;
 bool FLAGS_WAL_enabled;
 
 // Use the db with the following name.
-char* FLAGS_db;
+char *FLAGS_db;
 
 void init() {
   // Comma-separated list of operations to run in the specified order
@@ -71,38 +72,35 @@ void init() {
   //
   //   fillseq       -- write N values in sequential key order in async mode
   //   fillseqsync   -- write N/100 values in sequential key order in sync mode
-  //   fillseqbatch  -- batch write N values in sequential key order in async mode
-  //   fillrandom    -- write N values in random key order in async mode
+  //   fillseqbatch  -- batch write N values in sequential key order in async
+  //   mode fillrandom    -- write N values in random key order in async mode
   //   fillrandsync  -- write N/100 values in random key order in sync mode
-  //   fillrandbatch -- batch write N values in sequential key order in async mode
-  //   overwrite     -- overwrite N values in random key order in async mode
-  //   fillrand100K  -- write N/1000 100K values in random order in async mode
-  //   fillseq100K   -- write N/1000 100K values in sequential order in async mode
-  //   readseq       -- read N times sequentially
-  //   readrandom    -- read N times in random order
-  //   readrand100K  -- read N/1000 100K values in sequential order in async mode
-  FLAGS_benchmarks =
-    "fillseq,"
-    "fillseqsync,"
-    "fillseqbatch,"
-    "fillrandom,"
-    "fillrandsync,"
-    "fillrandbatch,"
-    "overwrite,"
-    "overwritebatch,"
-    "readrandom,"
-    "readseq,"
-    "fillrand100K,"
-    "fillseq100K,"
-    "readseq,"
-    "readrand100K,"
-    ;
+  //   fillrandbatch -- batch write N values in sequential key order in async
+  //   mode overwrite     -- overwrite N values in random key order in async
+  //   mode fillrand100K  -- write N/1000 100K values in random order in async
+  //   mode fillseq100K   -- write N/1000 100K values in sequential order in
+  //   async mode readseq       -- read N times sequentially readrandom    --
+  //   read N times in random order readrand100K  -- read N/1000 100K values in
+  //   sequential order in async mode
+  FLAGS_benchmarks = "fillseq,"
+                     "fillseqsync,"
+                     "fillseqbatch,"
+                     "fillrandom,"
+                     "fillrandsync,"
+                     "fillrandbatch,"
+                     "overwrite,"
+                     "overwritebatch,"
+                     "readrandom,"
+                     "readseq,"
+                     "fillrand100K,"
+                     "fillseq100K,"
+                     "readseq,"
+                     "readrand100K,";
   FLAGS_num = 1000000;
   FLAGS_reads = -1;
   FLAGS_value_size = 100;
   FLAGS_histogram = false;
-  FLAGS_raw = false,
-  FLAGS_compression_ratio = 0.5;
+  FLAGS_raw = false, FLAGS_compression_ratio = 0.5;
   FLAGS_page_size = 1024;
   FLAGS_num_pages = 4096;
   FLAGS_use_existing_db = false;
@@ -111,7 +109,7 @@ void init() {
   FLAGS_db = NULL;
 }
 
-void print_usage(const char* argv0) {
+void print_usage(const char *argv0) {
   fprintf(stderr, "Usage: %s [OPTION]...\n", argv0);
   fprintf(stderr, "SQLite3 benchmark tool\n");
   fprintf(stderr, "[OPTION]\n");
@@ -131,28 +129,49 @@ void print_usage(const char* argv0) {
   fprintf(stderr, "  --help\t\t\tshow this help\n");
   fprintf(stderr, "\n");
   fprintf(stderr, "[BENCH]\n");
-  fprintf(stderr, "  fillseq\twrite N values in sequential key order in async mode\n");
-  fprintf(stderr, "  fillseqsync\twrite N/100 values in sequential key order in sync mode\n");
-  fprintf(stderr, "  fillseqbatch\tbatch write N values in sequential key order in async mode\n");
-  fprintf(stderr, "  fillrandom\twrite N values in random key order in async mode\n");
-  fprintf(stderr, "  fillrandsync\twrite N/100 values in random key order in sync mode\n");
-  fprintf(stderr, "  fillrandbatch\tbatch write N values in random key order in async mode\n");
-  fprintf(stderr, "  overwrite\toverwrite N values in random key order in async mode\n");
-  fprintf(stderr, "  fillrand100K\twrite N/1000 100K values in random order in async mode\n");
-  fprintf(stderr, "  fillseq100K\twirte N/1000 100K values in sequential order in async mode\n");
+  fprintf(stderr,
+          "  fillseq\twrite N values in sequential key order in async mode\n");
+  fprintf(stderr, "  fillseqsync\twrite N/100 values in sequential key order "
+                  "in sync mode\n");
+  fprintf(stderr, "  fillseqbatch\tbatch write N values in sequential key "
+                  "order in async mode\n");
+  fprintf(stderr,
+          "  fillrandom\twrite N values in random key order in async mode\n");
+  fprintf(
+      stderr,
+      "  fillrandsync\twrite N/100 values in random key order in sync mode\n");
+  fprintf(stderr, "  fillrandbatch\tbatch write N values in random key order "
+                  "in async mode\n");
+  fprintf(
+      stderr,
+      "  overwrite\toverwrite N values in random key order in async mode\n");
+  fprintf(stderr, "  fillrand100K\twrite N/1000 100K values in random order in "
+                  "async mode\n");
+  fprintf(stderr, "  fillseq100K\twirte N/1000 100K values in sequential order "
+                  "in async mode\n");
   fprintf(stderr, "  readseq\tread N times sequentially\n");
   fprintf(stderr, "  readrandom\tread N times in random order\n");
-  fprintf(stderr, "  readrand100K\tread N/1000 100K values in sequential order in async mode\n");
+  fprintf(stderr, "  readrand100K\tread N/1000 100K values in sequential order "
+                  "in async mode\n");
 }
 
+static seL4_CPtr server_ep;
+static init_data_t init_data;
 
+int main(int argc, char **argv) {
+  /* parse args */
+  assert(argc == 4);
+  server_ep = (seL4_CPtr)atoi(argv[argc - 2]);
 
-int main(int argc, char** argv) {
-  init_syscall_table();
+  /* read in init data */
+  init_data = (void *)atol(argv[argc - 1]);
+  assert(init_data->magic == 0xdeadbeef);
+
+  init_syscall_table(server_ep);
 
   init();
 
-  char* default_db_path = malloc(sizeof(char) * 1024);
+  char *default_db_path = malloc(sizeof(char) * 1024);
   strcpy(default_db_path, "./");
 
   for (int i = 1; i < argc; i++) {
@@ -200,7 +219,7 @@ int main(int argc, char** argv) {
 
   /* Choose a location for the test database if none given with --db=<path>  */
   if (FLAGS_db == NULL)
-      FLAGS_db = default_db_path;
+    FLAGS_db = default_db_path;
 
   benchmark_init();
   benchmark_run();

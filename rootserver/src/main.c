@@ -20,7 +20,7 @@
 
 #include <vspace/vspace.h>
 
-#include "env.h"
+#include <service/env.h>
 
 /* Environment encapsulating allocation interfaces etc */
 struct root_env env;
@@ -85,7 +85,7 @@ static void init_env(root_env_t env) {
 }
 
 /* Start a new process running client */
-static void config_app(root_env_t env, sel4utils_process_t *app,
+static void config_app(root_env_t env, struct proc_t *app,
                        const char *image_name, int affinity) {
   int error;
   sel4utils_process_config_t config;
@@ -96,17 +96,38 @@ static void config_app(root_env_t env, sel4utils_process_t *app,
   config = process_config_auth(config, simple_get_tcb(&env->simple));
   config = process_config_create_cnode(config, CSPACE_SIZE_BITS);
   config.sched_params.core = (seL4_Word)affinity;
-  error =
-      sel4utils_configure_process_custom(app, &env->vka, &env->vspace, config);
+  error = sel4utils_configure_process_custom(&app->proc, &env->vka,
+                                             &env->vspace, config);
   ZF_LOGF_IF(error, "Failed to config process %s!", image_name);
 
-  error = sel4utils_set_sched_affinity(&app->thread, config.sched_params);
+  error = sel4utils_set_sched_affinity(&app->proc.thread, config.sched_params);
   ZF_LOGF_IF(error, "Failed to set process affinity to %d", affinity);
+
+  /* create a frame that will act as the init data, we can then map that
+   * in to target processes */
+  app->init = (init_data_t)vspace_new_pages(&env->vspace, seL4_AllRights, 1,
+                                            PAGE_BITS_4K);
+  assert(app->init != NULL);
+  app->init_vaddr = vspace_share_mem(&env->vspace, &app->proc.vspace, app->init,
+                                     1, PAGE_BITS_4K, seL4_AllRights, 1);
+
+  /* setup caps */
+  app->init->stack_pages = CONFIG_SEL4UTILS_STACK_SIZE / PAGE_SIZE_4K;
+  app->init->stack = app->proc.thread.stack_top - CONFIG_SEL4UTILS_STACK_SIZE;
+  app->init->page_directory =
+      sel4utils_copy_cap_to_process(&app->proc, &env->vka, app->proc.pd.cptr);
+  app->init->root_cnode = SEL4UTILS_CNODE_SLOT;
+  app->init->tcb = sel4utils_copy_cap_to_process(&app->proc, &env->vka,
+                                                 app->proc.thread.tcb.cptr);
+  app->init->cspace_size_bits = CSPACE_SIZE_BITS;
+  app->init->free_slots.end = (1u << CSPACE_SIZE_BITS);
+  app->init->magic = 0xdeadbeef;
 }
 
 void *main_continued(void *arg UNUSED) {
   int cores;
-  char *argv[2];
+  char *argv[4];
+  char string_args[4][WORD_STRING_SIZE];
 
   printf("\n");
   printf("sel4service rootserver\n");
@@ -120,18 +141,37 @@ void *main_continued(void *arg UNUSED) {
   config_app(&env, &env.fs, "xv6fs", 2);
   config_app(&env, &env.app, "sqlite3", 3);
 
-  // vka_alloc_endpoint(&env.vka, &env.app_fs_ep);
-  // vka_alloc_endpoint(&env.vka, &env.fs_ram_ep);
+  vka_alloc_endpoint(&env.vka, &env.app_fs_ep);
+  vka_alloc_endpoint(&env.vka, &env.fs_ram_ep);
+
+  env.ramdisk.init->client_ep = sel4utils_copy_cap_to_process(
+      &env.ramdisk.proc, &env.vka, env.fs_ram_ep.cptr);
+  env.ramdisk.init->server_ep = seL4_CapNull;
+  env.fs.init->client_ep =
+      sel4utils_copy_cap_to_process(&env.fs.proc, &env.vka, env.app_fs_ep.cptr);
+  env.fs.init->server_ep =
+      sel4utils_copy_cap_to_process(&env.fs.proc, &env.vka, env.fs_ram_ep.cptr);
+  env.app.init->client_ep = seL4_CapNull;
+  env.app.init->server_ep = sel4utils_copy_cap_to_process(
+      &env.app.proc, &env.vka, env.app_fs_ep.cptr);
 
   argv[0] = "./ramdisk";
-  sel4utils_spawn_process_v(&env.ramdisk, &env.vka, &env.vspace, 1, argv, 1);
+  sel4utils_create_word_args(string_args, &argv[1], 2,
+                             env.ramdisk.init->client_ep,
+                             env.ramdisk.init_vaddr);
+  sel4utils_spawn_process_v(&env.ramdisk.proc, &env.vka, &env.vspace, 3, argv,
+                            1);
 
   argv[0] = "./xv6fs";
-  sel4utils_spawn_process_v(&env.fs, &env.vka, &env.vspace, 1, argv, 1);
+  sel4utils_create_word_args(string_args, &argv[1], 3, env.fs.init->client_ep,
+                             env.fs.init->server_ep, env.fs.init_vaddr);
+  sel4utils_spawn_process_v(&env.fs.proc, &env.vka, &env.vspace, 4, argv, 1);
 
   argv[0] = "./sqlite-bench";
   argv[1] = "--help";
-  sel4utils_spawn_process_v(&env.app, &env.vka, &env.vspace, 2, argv, 1);
+  sel4utils_create_word_args(string_args, &argv[2], 2, env.app.init->server_ep,
+                             env.app.init_vaddr);
+  sel4utils_spawn_process_v(&env.app.proc, &env.vka, &env.vspace, 4, argv, 1);
 
   return 0;
 }
@@ -154,7 +194,6 @@ int main(void) {
 
   /* Check SMP */
   assert(info->nodeID == 0);
-  assert(info->numNodes == 4);
 
   /* Initialise libsel4simple, which abstracts away which kernel version we are
    * running on */
