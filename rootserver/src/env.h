@@ -29,5 +29,11 @@ struct root_env {
 
   /* RAM Disk device driver */
   sel4utils_process_t ramdisk;
+
+  /* Endpoint between app and fs server */
+  vka_object_t app_fs_ep;
+
+  /* Endpoint between fs server and device driver */
+  vka_object_t fs_ram_ep;
 };
 typedef struct root_env *root_env_t;

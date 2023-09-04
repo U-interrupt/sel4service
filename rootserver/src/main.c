@@ -21,9 +21,6 @@
 #include <vspace/vspace.h>
 
 #include "env.h"
-#include "sched.h"
-#include "sel4/simple_types.h"
-#include "sel4utils/thread.h"
 
 /* Environment encapsulating allocation interfaces etc */
 struct root_env env;
@@ -88,8 +85,8 @@ static void init_env(root_env_t env) {
 }
 
 /* Start a new process running client */
-static void run_app(root_env_t env, sel4utils_process_t *app, const char *image_name, int argc,
-                    char *argv[], int resume, int affinity) {
+static void config_app(root_env_t env, sel4utils_process_t *app,
+                       const char *image_name, int affinity) {
   int error;
   sel4utils_process_config_t config;
 
@@ -99,16 +96,16 @@ static void run_app(root_env_t env, sel4utils_process_t *app, const char *image_
   config = process_config_auth(config, simple_get_tcb(&env->simple));
   config = process_config_create_cnode(config, CSPACE_SIZE_BITS);
   config.sched_params.core = (seL4_Word)affinity;
-  error = sel4utils_configure_process_custom(app, &env->vka, &env->vspace,
-                                             config);
-  
-  ZF_LOGF_IF(error != 0, "Failed to config process %s!", image_name);
-  error = sel4utils_spawn_process_v(app, &env->vka, &env->vspace, argc,
-                                    argv, resume);
-  ZF_LOGF_IF(error != 0, "Failed to start process %s!", image_name);
+  error =
+      sel4utils_configure_process_custom(app, &env->vka, &env->vspace, config);
+  ZF_LOGF_IF(error, "Failed to config process %s!", image_name);
+
+  error = sel4utils_set_sched_affinity(&app->thread, config.sched_params);
+  ZF_LOGF_IF(error, "Failed to set process affinity to %d", affinity);
 }
 
 void *main_continued(void *arg UNUSED) {
+  int cores;
   char *argv[2];
 
   printf("\n");
@@ -116,21 +113,34 @@ void *main_continued(void *arg UNUSED) {
   printf("======================\n");
   printf("\n");
 
-  argv[0] = "./xv6fs";
-  run_app(&env, &env.fs, "xv6fs", 1, argv, 1, 1);
+  cores = simple_get_core_count(&env.simple);
+  printf("Run on %d cores\n", cores);
+
+  config_app(&env, &env.ramdisk, "ramdisk", 1);
+  config_app(&env, &env.fs, "xv6fs", 2);
+  config_app(&env, &env.app, "sqlite3", 3);
+
+  // vka_alloc_endpoint(&env.vka, &env.app_fs_ep);
+  // vka_alloc_endpoint(&env.vka, &env.fs_ram_ep);
 
   argv[0] = "./ramdisk";
-  run_app(&env, &env.ramdisk, "ramdisk", 1, argv, 1, 2);
+  sel4utils_spawn_process_v(&env.ramdisk, &env.vka, &env.vspace, 1, argv, 1);
+
+  argv[0] = "./xv6fs";
+  sel4utils_spawn_process_v(&env.fs, &env.vka, &env.vspace, 1, argv, 1);
 
   argv[0] = "./sqlite-bench";
-  argv[1] = "--benchmarks=readseq";
-  run_app(&env, &env.app, "sqlite3", 2, argv, 1, 3);
+  argv[1] = "--help";
+  sel4utils_spawn_process_v(&env.app, &env.vka, &env.vspace, 2, argv, 1);
 
   return 0;
 }
 
 /* When the root task exists, it should simply suspend itself */
-static void root_exit(int code) { seL4_TCB_Suspend(seL4_CapInitThreadTCB); }
+static void root_exit(int code) {
+  printf("sel4service rootserver exit\n");
+  seL4_TCB_Suspend(seL4_CapInitThreadTCB);
+}
 
 int main(void) {
   int error;
@@ -161,7 +171,7 @@ int main(void) {
 
   /* Switch to a bigger, safer stack with a guard page before starting the tests
    */
-  printf("Switching to a safer, bigger stack... ");
+  printf("Switching to a safer, bigger stack... \n");
   fflush(stdout);
 
   /* Run sel4test-test related tests */
