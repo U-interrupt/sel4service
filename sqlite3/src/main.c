@@ -159,22 +159,22 @@ static seL4_CPtr server_ep;
 static init_data_t init_data;
 
 int main(int argc, char **argv) {
-  /* parse args */
-  assert(argc == 4);
-  server_ep = (seL4_CPtr)atoi(argv[argc - 2]);
+  /* =========================== */
 
-  /* read in init data */
+  /* parse args */
   init_data = (void *)atol(argv[argc - 1]);
   assert(init_data->magic == 0xdeadbeef);
 
-  init_syscall_table(server_ep);
+  init_syscall_table(init_data->server_ep, init_data);
+
+  /* =========================== */
 
   init();
 
   char *default_db_path = malloc(sizeof(char) * 1024);
   strcpy(default_db_path, "./");
 
-  for (int i = 1; i < argc; i++) {
+  for (int i = 1; i < argc - 1; i++) {
     double d;
     int n;
     char junk;

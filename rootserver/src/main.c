@@ -155,30 +155,44 @@ void *main_continued(void *arg UNUSED) {
   env.app.init->server_ep = sel4utils_copy_cap_to_process(
       &env.app.proc, &env.vka, env.app_fs_ep.cptr);
 
+  env.app_fs_buf =
+      vspace_new_pages(&env.vspace, seL4_AllRights, 1, PAGE_BITS_4K);
+  env.app.init->server_buf =
+      vspace_share_mem(&env.vspace, &env.app.proc.vspace, env.app_fs_buf, 1,
+                       PAGE_BITS_4K, seL4_AllRights, 1);
+  env.fs.init->client_buf =
+      vspace_share_mem(&env.vspace, &env.fs.proc.vspace, env.app_fs_buf, 1,
+                       PAGE_BITS_4K, seL4_AllRights, 1);
+
+  env.fs_ram_buf =
+      vspace_new_pages(&env.vspace, seL4_AllRights, 1, PAGE_BITS_4K);
+  env.fs.init->server_buf =
+      vspace_share_mem(&env.vspace, &env.fs.proc.vspace, env.fs_ram_buf, 1,
+                       PAGE_BITS_4K, seL4_AllRights, 1);
+  env.ramdisk.init->client_buf =
+      vspace_share_mem(&env.vspace, &env.ramdisk.proc.vspace, env.fs_ram_buf, 1,
+                       PAGE_BITS_4K, seL4_AllRights, 1);
+
   argv[0] = "./ramdisk";
-  sel4utils_create_word_args(string_args, &argv[1], 2,
-                             env.ramdisk.init->client_ep,
-                             env.ramdisk.init_vaddr);
-  sel4utils_spawn_process_v(&env.ramdisk.proc, &env.vka, &env.vspace, 3, argv,
+  sel4utils_create_word_args(string_args, &argv[1], 1, env.ramdisk.init_vaddr);
+  sel4utils_spawn_process_v(&env.ramdisk.proc, &env.vka, &env.vspace, 2, argv,
                             1);
 
   argv[0] = "./xv6fs";
-  sel4utils_create_word_args(string_args, &argv[1], 3, env.fs.init->client_ep,
-                             env.fs.init->server_ep, env.fs.init_vaddr);
-  sel4utils_spawn_process_v(&env.fs.proc, &env.vka, &env.vspace, 4, argv, 1);
+  sel4utils_create_word_args(string_args, &argv[1], 1, env.fs.init_vaddr);
+  sel4utils_spawn_process_v(&env.fs.proc, &env.vka, &env.vspace, 2, argv, 1);
 
   argv[0] = "./sqlite-bench";
-  argv[1] = "--help";
-  sel4utils_create_word_args(string_args, &argv[2], 2, env.app.init->server_ep,
-                             env.app.init_vaddr);
-  sel4utils_spawn_process_v(&env.app.proc, &env.vka, &env.vspace, 4, argv, 1);
+  argv[1] = "--benchmarks=readseq";
+  sel4utils_create_word_args(string_args, &argv[2], 1, env.app.init_vaddr);
+  sel4utils_spawn_process_v(&env.app.proc, &env.vka, &env.vspace, 3, argv, 1);
 
   return 0;
 }
 
 /* When the root task exists, it should simply suspend itself */
 static void root_exit(int code) {
-  printf("sel4service rootserver exit\n");
+  printf("sel4service rootserver suspends\n");
   seL4_TCB_Suspend(seL4_CapInitThreadTCB);
 }
 
