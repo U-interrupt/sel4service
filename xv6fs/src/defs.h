@@ -31,7 +31,7 @@ typedef unsigned long uint64;
 #define MAXOPBLOCKS 10            // max # of blocks any FS op writes
 #define LOGSIZE (MAXOPBLOCKS * 3) // max data blocks in on-disk log
 #define NBUF (MAXOPBLOCKS * 3)    // size of disk block cache
-#define FSSIZE 2000               // size of file system in blocks
+#define FSSIZE 8 * 1024           // size of file system in blocks
 #define MAXPATH 128               // maximum file path name
 
 // stat.h
@@ -220,4 +220,4 @@ uint64 xv6fs_mkdir(void);
 uint64 xv6fs_close(void);
 
 // main.c
-void disk_rw(struct buf *, int);
+void disk_rw(void *buf, int blockno, int write);

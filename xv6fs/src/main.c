@@ -9,6 +9,7 @@
 #include <service/env.h>
 
 #include "defs.h"
+#include "sel4/shared_types_gen.h"
 
 static seL4_CPtr client_ep;
 static seL4_CPtr server_ep;
@@ -29,21 +30,21 @@ static size_t write_buf(void *data, size_t count) {
   return count;
 }
 
-void disk_rw(struct buf *buf, int write) {
+void disk_rw(void *buf, int blockno, int write) {
   if (write) {
     seL4_MessageInfo_t info = seL4_MessageInfo_new(DISK_WRITE, 0, 0, 1);
-    memmove(init_data->server_buf, buf->data, BSIZE);
-    seL4_SetMR(0, buf->blockno);
+    memmove(init_data->server_buf, buf, BSIZE);
+    seL4_SetMR(0, blockno);
     info = seL4_Call(server_ep, info);
     if (seL4_GetMR(0))
       panic("Failed to write block");
   } else {
     seL4_MessageInfo_t info = seL4_MessageInfo_new(DISK_READ, 0, 0, 1);
-    seL4_SetMR(0, buf->blockno);
+    seL4_SetMR(0, blockno);
     info = seL4_Call(server_ep, info);
     if (seL4_GetMR(0))
       panic("Failed to write block");
-    memmove(buf->data, init_data->server_buf, BSIZE);
+    memmove(buf, init_data->server_buf, BSIZE);
   }
 }
 
@@ -60,10 +61,12 @@ int main(int argc, char **argv) {
   curr_client = (struct client *)malloc(sizeof(struct client));
   curr_client->cwd = namei("/");
 
+  /* initialize fs */
   binit();
   iinit();
   fileinit();
   fsinit(ROOTDEV);
+  printf("[xv6fs] fs initialized successfully\n");
 
   while (1) {
 #ifdef TEST_NORMAL
@@ -71,16 +74,20 @@ int main(int argc, char **argv) {
     seL4_MessageInfo_t info = seL4_Recv(client_ep, NULL);
     switch (seL4_MessageInfo_get_label(info)) {
     case FS_OPEN:
-      printf("[xv6fs] open path=%s flags=0x%lx\n", (char *)seL4_GetMR(0),
-             seL4_GetMR(1));
-      xv6fs_open();
-      printf("PLJJFLSGJ\n");
+      ret = xv6fs_open();
+      break;
+    case FS_CLOSE:
+      ret = xv6fs_close();
+      break;
+    case FS_FSTAT:
+      ret = xv6fs_fstat();
       break;
     default:
       ret = -EINVAL;
       ZF_LOGE("FS call unimplemented!");
       break;
     }
+    info = seL4_MessageInfo_new(seL4_MessageInfo_get_label(info), 0, 0, 1);
     seL4_SetMR(0, ret);
     seL4_Reply(info);
 #endif

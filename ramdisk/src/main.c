@@ -3,13 +3,22 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include <allocman/bootstrap.h>
+#include <allocman/vka.h>
 #include <arch_stdio.h>
 #include <sel4/sel4.h>
+#include <sel4utils/mapping.h>
+#include <sel4utils/util.h>
+#include <sel4utils/vspace.h>
 
 #include <service/syscall.h>
 
-#define MAX_RAMDISK_SIZE 1048576
-char RAMDISK[MAX_RAMDISK_SIZE];
+#define BSIZE 1024
+#define MAX_RAMDISK_SIZE 256 * 1024 * 1024
+
+/* start at a virtual address below KERNEL_RESERVED_START */
+/* this address is a hack to vspace, do not change it !*/
+#define RAMDISK_BASE 0x20000000
 
 static seL4_CPtr client_ep;
 static init_data_t init_data;
@@ -32,22 +41,41 @@ int main(int argc, char **argv) {
   assert(init_data->magic == 0xdeadbeef);
   client_ep = init_data->client_ep;
 
+  seL4_CPtr ram = (seL4_Word)atol(argv[2]);
+  int error = seL4_Untyped_Retype(ram, seL4_RISCV_Mega_Page, seL4_LargePageBits,
+                                  init_data->root_cnode, 0, 0,
+                                  init_data->free_slots.start, 128);
+  ZF_LOGF_IF(error, "Failed to allocate frames");
+  seL4_Word vaddr = RAMDISK_BASE;
+  for (seL4_CPtr slot = init_data->free_slots.start;
+       slot < init_data->free_slots.start + 128; slot++) {
+    error =
+        seL4_RISCV_Page_Map(slot, init_data->page_directory, vaddr,
+                            seL4_AllRights, seL4_RISCV_Default_VMAttributes);
+    ZF_LOGF_IF(error, "Failed map pages %d", error);
+    vaddr += (1u << seL4_LargePageBits);
+  }
+
   while (1) {
 #ifdef TEST_NORMAL
     int ret = 0, blockno;
     seL4_MessageInfo_t info = seL4_Recv(client_ep, NULL);
     switch (seL4_MessageInfo_get_label(info)) {
     case DISK_INIT:
+      printf("[ramdisk] initialize xv6fs \n");
       break;
     case DISK_READ:
       blockno = seL4_GetMR(0);
-      printf("[ramdisk] read %d\n", blockno);
-      memmove(init_data->client_buf, RAMDISK + blockno * 512, 512);
+      // printf("[ramdisk] read %d\n", blockno);
+      memmove(init_data->client_buf, (void *)RAMDISK_BASE + blockno * BSIZE,
+              BSIZE);
       break;
     case DISK_WRITE:
       blockno = seL4_GetMR(0);
-      printf("[ramdisk] write %d\n", blockno);
-      memmove(RAMDISK + blockno * 512, init_data->client_buf, 512);
+      // printf("[ramdisk] write %d\n", blockno);
+      memmove((void *)RAMDISK_BASE + blockno * BSIZE, init_data->client_buf,
+              BSIZE);
+      break;
     default:
       ret = -EINVAL;
       ZF_LOGE("FS call unimplemented!");

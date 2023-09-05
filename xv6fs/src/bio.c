@@ -82,7 +82,7 @@ struct buf *bread(uint dev, uint blockno) {
 
   b = bget(dev, blockno);
   if (!b->valid) {
-    disk_rw(b, 0);
+    disk_rw(b->data, b->blockno, 0);
     b->valid = 1;
   }
   return b;
@@ -92,7 +92,7 @@ struct buf *bread(uint dev, uint blockno) {
 void bwrite(struct buf *b) {
   //   if (!holdingsleep(&b->lock))
   //     panic("bwrite");
-  disk_rw(b, 1);
+  disk_rw(b->data, b->blockno, 1);
 }
 
 // Release a locked buffer.

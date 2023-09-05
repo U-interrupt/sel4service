@@ -10,11 +10,28 @@
 // are in sysfile.c.
 
 #include "defs.h"
+#include "sel4/shared_types_gen.h"
+#include "service/syscall.h"
 
 #define min(a, b) ((a) < (b) ? (a) : (b))
+
 // there should be one superblock per disk device, but we run with
 // only one device
 struct superblock sb;
+
+#define NINODES 200
+
+// Disk layout:
+// [ boot block | sb block | log | inode blocks | free bit map | data blocks ]
+
+int nbitmap = FSSIZE / (BSIZE * 8) + 1;
+int ninodeblocks = NINODES / IPB + 1;
+int nlog = LOGSIZE;
+int nmeta;   // Number of meta blocks (boot, sb, nlog, inode, bitmap)
+int nblocks; // Number of data blocks
+char zeroes[BSIZE];
+uint freeinode = 1;
+uint freeblock;
 
 // Read the super block.
 static void readsb(int dev, struct superblock *sb) {
@@ -25,8 +42,179 @@ static void readsb(int dev, struct superblock *sb) {
   brelse(bp);
 }
 
+static ushort xshort(ushort x) {
+  ushort y;
+  uchar *a = (uchar *)&y;
+  a[0] = x;
+  a[1] = x >> 8;
+  return y;
+}
+
+static uint xint(uint x) {
+  uint y;
+  uchar *a = (uchar *)&y;
+  a[0] = x;
+  a[1] = x >> 8;
+  a[2] = x >> 16;
+  a[3] = x >> 24;
+  return y;
+}
+
+static void wsect(uint sec, void *buf) { disk_rw(buf, sec, 1); }
+static void rsect(uint sec, void *buf) { disk_rw(buf, sec, 0); }
+
+static void winode(uint inum, struct dinode *ip) {
+  char buf[BSIZE];
+  uint bn;
+  struct dinode *dip;
+
+  bn = IBLOCK(inum, sb);
+  rsect(bn, buf);
+  dip = ((struct dinode *)buf) + (inum % IPB);
+  *dip = *ip;
+  wsect(bn, buf);
+}
+
+static void rinode(uint inum, struct dinode *ip) {
+  char buf[BSIZE];
+  uint bn;
+  struct dinode *dip;
+
+  bn = IBLOCK(inum, sb);
+  rsect(bn, buf);
+  dip = ((struct dinode *)buf) + (inum % IPB);
+  *ip = *dip;
+}
+
+static uint init_ialloc(ushort type) {
+  uint inum = freeinode++;
+  struct dinode din;
+
+  bzero(&din, sizeof(din));
+  din.type = xshort(type);
+  din.nlink = xshort(1);
+  din.size = xint(0);
+  winode(inum, &din);
+  return inum;
+}
+
+static void init_balloc(int used) {
+  uchar buf[BSIZE];
+  int i;
+
+  printf("balloc: first %d blocks have been allocated\n", used);
+  assert(used < BSIZE * 8);
+  bzero(buf, BSIZE);
+  for (i = 0; i < used; i++) {
+    buf[i / 8] = buf[i / 8] | (0x1 << (i % 8));
+  }
+  printf("balloc: write bitmap block at sector %d\n", sb.bmapstart);
+  wsect(sb.bmapstart, buf);
+}
+
+static void iappend(uint inum, void *xp, int n) {
+  char *p = (char *)xp;
+  uint fbn, off, n1;
+  struct dinode din;
+  char buf[BSIZE];
+  uint indirect[NINDIRECT];
+  uint x;
+
+  rinode(inum, &din);
+  off = xint(din.size);
+  // printf("append inum %d at off %d sz %d\n", inum, off, n);
+  while (n > 0) {
+    fbn = off / BSIZE;
+    assert(fbn < MAXFILE);
+    if (fbn < NDIRECT) {
+      if (xint(din.addrs[fbn]) == 0) {
+        din.addrs[fbn] = xint(freeblock++);
+      }
+      x = xint(din.addrs[fbn]);
+    } else {
+      if (xint(din.addrs[NDIRECT]) == 0) {
+        din.addrs[NDIRECT] = xint(freeblock++);
+      }
+      rsect(xint(din.addrs[NDIRECT]), (char *)indirect);
+      if (indirect[fbn - NDIRECT] == 0) {
+        indirect[fbn - NDIRECT] = xint(freeblock++);
+        wsect(xint(din.addrs[NDIRECT]), (char *)indirect);
+      }
+      x = xint(indirect[fbn - NDIRECT]);
+    }
+    n1 = min(n, (fbn + 1) * BSIZE - off);
+    rsect(x, buf);
+    bcopy(p, buf + off - (fbn * BSIZE), n1);
+    wsect(x, buf);
+    n -= n1;
+    off += n1;
+    p += n1;
+  }
+  din.size = xint(off);
+  winode(inum, &din);
+}
+
+static void create_image(void) {
+  int i, cc, fd;
+  uint rootino, inum, off;
+  struct dirent de;
+  char buf[BSIZE];
+  struct dinode din;
+
+  // 1 fs block = 1 disk sector
+  nmeta = 2 + nlog + ninodeblocks + nbitmap;
+  nblocks = FSSIZE - nmeta;
+
+  sb.magic = FSMAGIC;
+  sb.size = xint(FSSIZE);
+  sb.nblocks = xint(nblocks);
+  sb.ninodes = xint(NINODES);
+  sb.nlog = xint(nlog);
+  sb.logstart = xint(2);
+  sb.inodestart = xint(2 + nlog);
+  sb.bmapstart = xint(2 + nlog + ninodeblocks);
+
+  printf("[xv6fs] nmeta %d (boot, super, log blocks %u inode blocks %u, bitmap "
+         "blocks "
+         "%u) blocks %d total %d\n",
+         nmeta, nlog, ninodeblocks, nbitmap, nblocks, FSSIZE);
+
+  freeblock = nmeta; // the first free block that we can allocate
+
+  for (i = 0; i < FSSIZE; i++)
+    wsect(i, zeroes);
+
+  memset(buf, 0, sizeof(buf));
+  memmove(buf, &sb, sizeof(sb));
+  wsect(1, buf);
+
+  rootino = init_ialloc(T_DIR);
+  assert(rootino == ROOTINO);
+
+  bzero(&de, sizeof(de));
+  de.inum = xshort(rootino);
+  strcpy(de.name, ".");
+  iappend(rootino, &de, sizeof(de));
+
+  bzero(&de, sizeof(de));
+  de.inum = xshort(rootino);
+  strcpy(de.name, "..");
+  iappend(rootino, &de, sizeof(de));
+
+  // fix size of root inode dir
+  rinode(rootino, &din);
+  off = xint(din.size);
+  off = ((off / BSIZE) + 1) * BSIZE;
+  din.size = xint(off);
+  winode(rootino, &din);
+
+  init_balloc(freeblock);
+}
+
 // Init fs
 void fsinit(int dev) {
+  create_image();
+
   readsb(dev, &sb);
   if (sb.magic != FSMAGIC)
     panic("invalid file system");

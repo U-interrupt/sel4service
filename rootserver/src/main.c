@@ -120,14 +120,28 @@ static void config_app(root_env_t env, struct proc_t *app,
   app->init->tcb = sel4utils_copy_cap_to_process(&app->proc, &env->vka,
                                                  app->proc.thread.tcb.cptr);
   app->init->cspace_size_bits = CSPACE_SIZE_BITS;
+  app->init->free_slots.start = app->init->tcb + 3; // tcb, client_ep, server_ep
   app->init->free_slots.end = (1u << CSPACE_SIZE_BITS);
   app->init->magic = 0xdeadbeef;
 }
 
+static seL4_CPtr alloc_untyped(root_env_t env, struct proc_t *app,
+                               seL4_Word size_bits) {
+  seL4_BootInfo *info = platsupport_get_bootinfo();
+  for (seL4_CPtr slot = info->untyped.start; slot != info->untyped.end;
+       slot++) {
+    seL4_UntypedDesc *desc = &info->untypedList[slot - info->untyped.start];
+    if (!desc->isDevice && desc->sizeBits >= size_bits) {
+      return sel4utils_copy_cap_to_process(&app->proc, &env->vka, slot);
+    }
+  }
+  return seL4_CapNull;
+}
+
 void *main_continued(void *arg UNUSED) {
   int cores;
-  char *argv[4];
-  char string_args[4][WORD_STRING_SIZE];
+  char *argv[10];
+  char string_args[10][WORD_STRING_SIZE];
 
   printf("\n");
   printf("sel4service rootserver\n");
@@ -173,9 +187,14 @@ void *main_continued(void *arg UNUSED) {
       vspace_share_mem(&env.vspace, &env.ramdisk.proc.vspace, env.fs_ram_buf, 1,
                        PAGE_BITS_4K, seL4_AllRights, 1);
 
+  /* ramdisk can use 256 MB physical memory */
+  seL4_CPtr ramdisk = alloc_untyped(&env, &env.ramdisk, 28);
+  env.ramdisk.init->free_slots.start++;
+
   argv[0] = "./ramdisk";
-  sel4utils_create_word_args(string_args, &argv[1], 1, env.ramdisk.init_vaddr);
-  sel4utils_spawn_process_v(&env.ramdisk.proc, &env.vka, &env.vspace, 2, argv,
+  sel4utils_create_word_args(string_args, &argv[1], 2, env.ramdisk.init_vaddr,
+                             ramdisk);
+  sel4utils_spawn_process_v(&env.ramdisk.proc, &env.vka, &env.vspace, 3, argv,
                             1);
 
   argv[0] = "./xv6fs";
@@ -184,8 +203,9 @@ void *main_continued(void *arg UNUSED) {
 
   argv[0] = "./sqlite-bench";
   argv[1] = "--benchmarks=readseq";
-  sel4utils_create_word_args(string_args, &argv[2], 1, env.app.init_vaddr);
-  sel4utils_spawn_process_v(&env.app.proc, &env.vka, &env.vspace, 3, argv, 1);
+  argv[2] = "--num=1";
+  sel4utils_create_word_args(string_args, &argv[3], 1, env.app.init_vaddr);
+  sel4utils_spawn_process_v(&env.app.proc, &env.vka, &env.vspace, 4, argv, 1);
 
   return 0;
 }

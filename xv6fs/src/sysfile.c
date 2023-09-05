@@ -28,7 +28,8 @@ static int fdalloc(struct file *f) {
   int fd;
   // struct proc *p = myproc();
 
-  for (fd = 0; fd < NOFILE; fd++) {
+  // skip STDIN, STDOUT, STDERR
+  for (fd = 3; fd < NOFILE; fd++) {
     if (curr()->ofile[fd] == 0) {
       curr()->ofile[fd] = f;
       return fd;
@@ -216,12 +217,10 @@ static struct inode *create(char *path, short type, short major, short minor) {
   struct inode *ip, *dp;
   char name[DIRSIZ];
 
-  printf("OKKKKKKK\n");
   if ((dp = nameiparent(path, name)) == 0)
     return 0;
 
   ilock(dp);
-  printf("OKKKKKKK\n");
   if ((ip = dirlookup(dp, name, 0)) != 0) {
     iunlockput(dp);
     ilock(ip);
@@ -230,7 +229,6 @@ static struct inode *create(char *path, short type, short major, short minor) {
     iunlockput(ip);
     return 0;
   }
-  printf("SFFHG\n");
 
   if ((ip = ialloc(dp->dev, type)) == 0) {
     iunlockput(dp);
@@ -295,12 +293,11 @@ uint64 xv6fs_open() {
       return -1;
     }
     ilock(ip);
-    printf("asfkhafgaf\n");
-    if (ip->type == T_DIR && omode != O_RDONLY) {
-      iunlockput(ip);
+    // if (ip->type == T_DIR && omode != O_RDONLY) {
+    //   iunlockput(ip);
       // end_op();
-      return -1;
-    }
+      // return -1;
+    // }
   }
 
   if (ip->type == T_DEVICE && (ip->major < 0 || ip->major >= NDEV)) {

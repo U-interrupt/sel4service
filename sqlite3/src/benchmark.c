@@ -77,7 +77,7 @@ static void print_header() {
   fprintf(stderr, "Keys:       %d bytes each\n", kKeySize);
   fprintf(stderr, "Values:     %d bytes each\n", FLAGS_value_size);  
   fprintf(stderr, "Entries:    %d\n", num_);
-  fprintf(stderr, "RawSize:    %.1f MB (estimated)\n",
+  fprintf(stderr, "RawSize:    %.3f MB (estimated)\n",
             (((int64_t)(kKeySize + FLAGS_value_size) * num_)
             / 1048576.0));
   print_warnings();
@@ -333,6 +333,7 @@ void benchmark_open() {
             tmp_dir,
             db_num_);
   status = sqlite3_open(file_name, &db_);
+  printf("Open success\n");
   if (status) {
     fprintf(stderr, "open error: %s\n", sqlite3_errmsg(db_));
     exit(1);
