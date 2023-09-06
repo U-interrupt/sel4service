@@ -75,6 +75,44 @@ uint64 xv6fs_write(void) {
   return filewrite(f, p, n);
 }
 
+uint64 xv6fs_pread(void) {
+  struct file *f;
+  int n;
+  uint64 p;
+  uint64 off;
+
+  argaddr(1, &p);
+  argint(2, &n);
+  if (argfd(0, 0, &f) < 0)
+    return -1;
+
+  argaddr(3, &off);
+  if (fileseek(f, (off_t)off, SEEK_SET)) {
+    return -1;
+  }
+
+  return fileread(f, p, n);
+}
+
+uint64 xv6fs_pwrite(void) {
+  struct file *f;
+  int n;
+  uint64 p;
+  uint64 off;
+
+  argaddr(1, &p);
+  argint(2, &n);
+  if (argfd(0, 0, &f) < 0)
+    return -1;
+
+  argaddr(3, &off);
+  if (fileseek(f, (off_t)off, SEEK_SET)) {
+    return -1;
+  }
+
+  return filewrite(f, p, n);
+}
+
 uint64 xv6fs_close(void) {
   int fd;
   struct file *f;
@@ -281,7 +319,9 @@ uint64 xv6fs_open() {
     return -1;
   // begin_op();
 
-  if (omode & O_CREATE) {
+  printf("[xv6fs] open %s 0o%o\n", path, omode);
+
+  if (omode & O_CREAT) {
     ip = create(path, T_FILE, 0, 0);
     if (ip == 0) {
       // end_op();
@@ -295,8 +335,8 @@ uint64 xv6fs_open() {
     ilock(ip);
     // if (ip->type == T_DIR && omode != O_RDONLY) {
     //   iunlockput(ip);
-      // end_op();
-      // return -1;
+    // end_op();
+    // return -1;
     // }
   }
 
@@ -387,7 +427,52 @@ uint64 xv6fs_chdir(void) {
   iput(curr()->cwd);
   // end_op();
   curr()->cwd = ip;
+  strncpy(curr()->cwd_path, path, MAXPATH);
   return 0;
+}
+
+uint64 xv6fs_getcwd(void) {
+  uint64 path;
+  size_t size;
+
+  argaddr(0, &path);
+  argaddr(1, &size);
+
+  strcpy((char *)path, curr()->cwd_path);
+  return 0;
+}
+
+uint64 xv6fs_lstat(void) {
+  char path[MAXPATH];
+  uint64 buf;
+  struct inode *ip;
+  int n;
+
+  argaddr(1, &buf);
+  if ((n = argstr(0, path, MAXPATH)) < 0)
+    return -EINVAL;
+
+  printf("[xv6fs] lstat %s\n", path);
+
+  if ((ip = namei(path)) == 0) {
+    return -ENOENT;
+  }
+
+  stati(ip, (struct stat *)buf);
+
+  return 0;
+}
+
+uint64 xv6fs_lseek(void) {
+  struct file *f;
+  uint64 off;
+  int whence;
+
+  argaddr(1, &off);
+  argint(2, &whence);
+  if (argfd(0, 0, &f) < 0)
+    return -1;
+  return fileseek(f, (off_t)off, whence);
 }
 
 // uint64 sys_pipe(void) {
@@ -408,7 +493,8 @@ uint64 xv6fs_chdir(void) {
 //     return -1;
 //   }
 //   if (copyout(p->pagetable, fdarray, (char *)&fd0, sizeof(fd0)) < 0 ||
-//       copyout(p->pagetable, fdarray + sizeof(fd0), (char *)&fd1, sizeof(fd1)) <
+//       copyout(p->pagetable, fdarray + sizeof(fd0), (char *)&fd1, sizeof(fd1))
+//       <
 //           0) {
 //     p->ofile[fd0] = 0;
 //     p->ofile[fd1] = 0;

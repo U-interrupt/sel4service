@@ -9,7 +9,6 @@
 #include <service/env.h>
 
 #include "defs.h"
-#include "sel4/shared_types_gen.h"
 
 static seL4_CPtr client_ep;
 static seL4_CPtr server_ep;
@@ -60,6 +59,7 @@ int main(int argc, char **argv) {
 
   curr_client = (struct client *)malloc(sizeof(struct client));
   curr_client->cwd = namei("/");
+  strcpy(curr_client->cwd_path, "/");
 
   /* initialize fs */
   binit();
@@ -82,11 +82,33 @@ int main(int argc, char **argv) {
     case FS_FSTAT:
       ret = xv6fs_fstat();
       break;
+    case FS_GETCWD:
+      ret = xv6fs_getcwd();
+      break;
+    case FS_LSTAT:
+      ret = xv6fs_lstat();
+      break;
+    case FS_READ:
+      ret = xv6fs_read();
+      break;
+    case FS_WRITE:
+      ret = xv6fs_write();
+      break;
+    case FS_PREAD:
+      ret = xv6fs_pread();
+      break;
+    case FS_PWRITE:
+      ret = xv6fs_pwrite();
+      break;
+    case FS_LSEEK:
+      ret = xv6fs_lseek();
+      break;
     default:
       ret = -EINVAL;
       ZF_LOGE("FS call unimplemented!");
       break;
     }
+    printf("[xv6fs] return %d\n", ret);
     info = seL4_MessageInfo_new(seL4_MessageInfo_get_label(info), 0, 0, 1);
     seL4_SetMR(0, ret);
     seL4_Reply(info);

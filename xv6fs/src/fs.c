@@ -10,8 +10,6 @@
 // are in sysfile.c.
 
 #include "defs.h"
-#include "sel4/shared_types_gen.h"
-#include "service/syscall.h"
 
 #define min(a, b) ((a) < (b) ? (a) : (b))
 
@@ -604,7 +602,7 @@ void itrunc(struct inode *ip) {
 void stati(struct inode *ip, struct stat *st) {
   st->dev = ip->dev;
   st->ino = ip->inum;
-  st->type = ip->type;
+  st->type = ip->type << 14;
   st->nlink = ip->nlink;
   st->size = ip->size;
 }
@@ -758,7 +756,7 @@ static char *skipelem(char *path, char *name) {
   char *s;
   int len;
 
-  while (*path == '/' || *path == '.')
+  while (*path == '/')
     path++;
   if (*path == 0)
     return 0;
@@ -773,7 +771,7 @@ static char *skipelem(char *path, char *name) {
     memmove(name, s, len);
     name[len] = 0;
   }
-  while (*path == '/' || *path == '.')
+  while (*path == '/')
     path++;
   return path;
 }

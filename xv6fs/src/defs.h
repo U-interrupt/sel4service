@@ -13,11 +13,29 @@ typedef unsigned int uint32;
 typedef unsigned long uint64;
 
 // fcntl.h
-#define O_RDONLY 0x000
-#define O_WRONLY 0x001
-#define O_RDWR 0x002
-#define O_CREATE 0x200
-#define O_TRUNC 0x400
+#define O_RDONLY 00
+#define O_WRONLY 01
+#define O_RDWR 02
+#define O_CREAT 0100
+#define O_EXCL 0200
+#define O_NOCTTY 0400
+#define O_TRUNC 01000
+#define O_APPEND 02000
+#define O_NONBLOCK 04000
+#define O_DSYNC 010000
+#define O_SYNC 04010000
+#define O_RSYNC 04010000
+#define O_DIRECTORY 0200000
+#define O_NOFOLLOW 0400000
+#define O_CLOEXEC 02000000
+
+#define O_ASYNC 020000
+#define O_DIRECT 040000
+#define O_LARGEFILE 0100000
+#define O_NOATIME 01000000
+#define O_PATH 010000000
+#define O_TMPFILE 020200000
+#define O_NDELAY O_NONBLOCK
 
 // params.h
 #define NPROC 64                  // maximum number of processes
@@ -40,11 +58,19 @@ typedef unsigned long uint64;
 #define T_DEVICE 3 // Device
 
 struct stat {
-  int dev;     // File system's disk device
-  uint ino;    // Inode number
-  short type;  // Type of file
-  short nlink; // Number of links to file
-  uint64 size; // Size of file in bytes
+  dev_t dev;         /* ID of device containing file */
+  ino_t ino;         /* inode number */
+  mode_t type;       /* protection */
+  nlink_t nlink;     /* number of hard links */
+  uid_t uid;         /* user ID of owner */
+  gid_t gid;         /* group ID of owner */
+  dev_t rdev;        /* device ID (if special file) */
+  off_t size;        /* total size, in bytes */
+  blksize_t blksize; /* blocksize for file system I/O */
+  blkcnt_t blocks;   /* number of 512B blocks allocated */
+  time_t atime;      /* time of last access */
+  time_t mtime;      /* time of last modification */
+  time_t ctime;      /* time of last status change */
 };
 
 // fs.h
@@ -100,7 +126,7 @@ struct dinode {
 #define BBLOCK(b, sb) ((b) / BPB + sb.bmapstart)
 
 // Directory is a file containing a sequence of dirent structures.
-#define DIRSIZ 14
+#define DIRSIZ 62
 
 struct dirent {
   ushort inum;
@@ -164,6 +190,7 @@ struct buf {
 struct client {
   struct file *ofile[NOFILE];
   struct inode *cwd;
+  char cwd_path[MAXPATH];
 };
 
 struct client *curr(void);
@@ -184,6 +211,7 @@ void fileinit(void);
 int fileread(struct file *, uint64, int n);
 int filestat(struct file *, uint64 addr);
 int filewrite(struct file *, uint64, int n);
+int fileseek(struct file *, off_t, int);
 
 // fs.c
 void fsinit(int);
@@ -208,16 +236,21 @@ void itrunc(struct inode *);
 // sysfile.c
 // uint64 xv6fs_pipe(void);
 uint64 xv6fs_read(void);
+uint64 xv6fs_pread(void);
 uint64 xv6fs_fstat(void);
 uint64 xv6fs_chdir(void);
 uint64 xv6fs_dup(void);
 uint64 xv6fs_open(void);
 uint64 xv6fs_write(void);
+uint64 xv6fs_pwrite(void);
 uint64 xv6fs_mknod(void);
 uint64 xv6fs_unlink(void);
 uint64 xv6fs_link(void);
 uint64 xv6fs_mkdir(void);
 uint64 xv6fs_close(void);
+uint64 xv6fs_getcwd(void);
+uint64 xv6fs_lstat(void);
+uint64 xv6fs_lseek(void);
 
 // main.c
 void disk_rw(void *buf, int blockno, int write);

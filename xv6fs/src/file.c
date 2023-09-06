@@ -82,6 +82,26 @@ int filestat(struct file *f, uint64 addr) {
   return -1;
 }
 
+// Seek to offset
+int fileseek(struct file *f, off_t off, int whence) {
+  if (f->type == FD_INODE) {
+    if (whence == SEEK_CUR) {
+      f->off += off;
+    } else if (whence == SEEK_SET) {
+      f->off = off;
+    } else if (whence == SEEK_END) {
+      f->off = f->ip->size + off;
+      // don't allow the file offset set beyond the end of the file
+      assert(f->off <= f->ip->size);
+    } else {
+      return -1;
+    }
+    return 0;
+  }
+
+  return -1;
+}
+
 // Read from file f.
 // addr is a user virtual address.
 int fileread(struct file *f, uint64 addr, int n) {
