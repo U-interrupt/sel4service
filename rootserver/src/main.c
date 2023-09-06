@@ -42,6 +42,9 @@ extern char _cpio_archive_end[];
 
 #define MAX_ARG_NUM 10
 
+int untypedList_allocated
+    [CONFIG_MAX_NUM_BOOTINFO_UNTYPED_CAPS]; /* information about each untyped */
+
 /* Initialise our runtime environment */
 static void init_env(root_env_t env) {
   int error;
@@ -131,7 +134,9 @@ static seL4_CPtr alloc_untyped(root_env_t env, struct proc_t *app,
   for (seL4_CPtr slot = info->untyped.start; slot != info->untyped.end;
        slot++) {
     seL4_UntypedDesc *desc = &info->untypedList[slot - info->untyped.start];
-    if (!desc->isDevice && desc->sizeBits >= size_bits) {
+    if (!desc->isDevice && desc->sizeBits == size_bits &&
+        !untypedList_allocated[slot - info->untyped.start]) {
+      untypedList_allocated[slot - info->untyped.start] = 1;
       return sel4utils_copy_cap_to_process(&app->proc, &env->vka, slot);
     }
   }
@@ -201,11 +206,16 @@ void *main_continued(void *arg UNUSED) {
   sel4utils_create_word_args(string_args, &argv[1], 1, env.fs.init_vaddr);
   sel4utils_spawn_process_v(&env.fs.proc, &env.vka, &env.vspace, 2, argv, 1);
 
+  /* sqlite3 can use 4 MB physical memory */
+  seL4_CPtr sqlite3_mem = alloc_untyped(&env, &env.app, 28);
+  env.app.init->free_slots.start++;
+
   argv[0] = "./sqlite-bench";
   argv[1] = "--benchmarks=readseq";
   argv[2] = "--num=1";
-  sel4utils_create_word_args(string_args, &argv[3], 1, env.app.init_vaddr);
-  sel4utils_spawn_process_v(&env.app.proc, &env.vka, &env.vspace, 4, argv, 1);
+  sel4utils_create_word_args(string_args, &argv[3], 2, env.app.init_vaddr,
+                             sqlite3_mem);
+  sel4utils_spawn_process_v(&env.app.proc, &env.vka, &env.vspace, 5, argv, 1);
 
   return 0;
 }

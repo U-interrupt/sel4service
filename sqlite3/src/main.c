@@ -158,12 +158,31 @@ void print_usage(const char *argv0) {
 static seL4_CPtr server_ep;
 static init_data_t init_data;
 
+/* start at a virtual address below KERNEL_RESERVED_START */
+/* this address is a hack to vspace, do not change it !*/
+#define MEM_BASE 0x20000000
+
 int main(int argc, char **argv) {
   /* =========================== */
 
   /* parse args */
-  init_data = (void *)atol(argv[argc - 1]);
+  init_data = (void *)atol(argv[argc - 2]);
   assert(init_data->magic == 0xdeadbeef);
+
+  seL4_CPtr ram = (seL4_Word)atol(argv[argc - 1]);
+  int error = seL4_Untyped_Retype(ram, seL4_RISCV_Mega_Page, seL4_LargePageBits,
+                                  init_data->root_cnode, 0, 0,
+                                  init_data->free_slots.start, 2);
+  ZF_LOGF_IF(error, "Failed to allocate frames");
+  seL4_Word vaddr = MEM_BASE;
+  for (seL4_CPtr slot = init_data->free_slots.start;
+       slot < init_data->free_slots.start + 2; slot++) {
+    error =
+        seL4_RISCV_Page_Map(slot, init_data->page_directory, vaddr,
+                            seL4_AllRights, seL4_RISCV_Default_VMAttributes);
+    ZF_LOGF_IF(error, "Failed map pages %d", error);
+    vaddr += (1u << seL4_LargePageBits);
+  }
 
   init_syscall_table(init_data->server_ep, init_data);
 
@@ -174,7 +193,7 @@ int main(int argc, char **argv) {
   char *default_db_path = malloc(sizeof(char) * 1024);
   strcpy(default_db_path, "./");
 
-  for (int i = 1; i < argc - 1; i++) {
+  for (int i = 1; i < argc - 2; i++) {
     double d;
     int n;
     char junk;

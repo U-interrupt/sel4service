@@ -332,8 +332,12 @@ void benchmark_open() {
             "%sdbbench_sqlite3-%d.db",
             tmp_dir,
             db_num_);
+  status = sqlite3_config(SQLITE_CONFIG_SINGLETHREAD);
+  if (status) {
+    fprintf(stderr, "cofnig error: %s\n", sqlite3_errmsg(db_));
+    exit(1);
+  }
   status = sqlite3_open(file_name, &db_);
-  printf("Open success\n");
   if (status) {
     fprintf(stderr, "open error: %s\n", sqlite3_errmsg(db_));
     exit(1);
