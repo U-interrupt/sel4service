@@ -103,6 +103,9 @@ int main(int argc, char **argv) {
     case FS_LSEEK:
       ret = xv6fs_lseek();
       break;
+    case FS_UNLINK:
+      ret = xv6fs_unlink();
+      break;
     default:
       ret = -EINVAL;
       ZF_LOGE("FS call unimplemented!");

@@ -96,7 +96,7 @@ int fileseek(struct file *f, off_t off, int whence) {
     } else {
       return -1;
     }
-    return 0;
+    return f->off;
   }
 
   return -1;
@@ -108,13 +108,13 @@ int fileread(struct file *f, uint64 addr, int n) {
   int r = 0;
 
   if (f->readable == 0)
-    return -1;
+    return -EBADF;
 
   if (f->type == FD_PIPE) {
     // r = piperead(f->pipe, addr, n);
   } else if (f->type == FD_DEVICE) {
     if (f->major < 0 || f->major >= NDEV || !devsw[f->major].read)
-      return -1;
+      return -EINVAL;
     r = devsw[f->major].read(1, addr, n);
   } else if (f->type == FD_INODE) {
     ilock(f->ip);
@@ -134,13 +134,13 @@ int filewrite(struct file *f, uint64 addr, int n) {
   int r, ret = 0;
 
   if (f->writable == 0)
-    return -1;
+    return -EBADF;
 
   if (f->type == FD_PIPE) {
     // ret = pipewrite(f->pipe, addr, n);
   } else if (f->type == FD_DEVICE) {
     if (f->major < 0 || f->major >= NDEV || !devsw[f->major].write)
-      return -1;
+      return -EINVAL;
     ret = devsw[f->major].write(1, addr, n);
   } else if (f->type == FD_INODE) {
     // write a few blocks at a time to avoid exceeding
@@ -164,12 +164,14 @@ int filewrite(struct file *f, uint64 addr, int n) {
       // end_op();
 
       if (r != n1) {
+        printf("%d\n", r);
         // error from writei
         break;
       }
       i += r;
     }
-    ret = (i == n ? n : -1);
+    // ret = (i == n ? n : -1);
+    ret = i; // just return how many we write
   } else {
     panic("filewrite");
   }

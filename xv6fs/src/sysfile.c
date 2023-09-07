@@ -84,11 +84,12 @@ uint64 xv6fs_pread(void) {
   argaddr(1, &p);
   argint(2, &n);
   if (argfd(0, 0, &f) < 0)
-    return -1;
+    return -EBADF;
 
   argaddr(3, &off);
-  if (fileseek(f, (off_t)off, SEEK_SET)) {
-    return -1;
+  if (fileseek(f, (off_t)off, SEEK_SET) < 0) {
+    // read out of bound and return nothing
+    return -EINVAL;
   }
 
   return fileread(f, p, n);
@@ -106,8 +107,8 @@ uint64 xv6fs_pwrite(void) {
     return -1;
 
   argaddr(3, &off);
-  if (fileseek(f, (off_t)off, SEEK_SET)) {
-    return -1;
+  if (fileseek(f, (off_t)off, SEEK_SET) < 0) {
+    return -EINVAL;
   }
 
   return filewrite(f, p, n);
