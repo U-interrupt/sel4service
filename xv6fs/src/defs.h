@@ -60,17 +60,20 @@ typedef unsigned long uint64;
 struct stat {
   dev_t dev;         /* ID of device containing file */
   ino_t ino;         /* inode number */
-  mode_t type;       /* protection */
+  mode_t mode;       /* protection */
   nlink_t nlink;     /* number of hard links */
   uid_t uid;         /* user ID of owner */
   gid_t gid;         /* group ID of owner */
   dev_t rdev;        /* device ID (if special file) */
+	long long __st_rdev_padding;
   off_t size;        /* total size, in bytes */
   blksize_t blksize; /* blocksize for file system I/O */
+	int __st_blksize_padding;
   blkcnt_t blocks;   /* number of 512B blocks allocated */
-  time_t atime;      /* time of last access */
-  time_t mtime;      /* time of last modification */
-  time_t ctime;      /* time of last status change */
+  time_t atime[2];      /* time of last access */
+  time_t mtime[2];      /* time of last modification */
+  time_t ctime[2];      /* time of last status change */
+	unsigned __unused[2];
 };
 
 // fs.h

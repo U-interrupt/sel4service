@@ -602,7 +602,7 @@ void itrunc(struct inode *ip) {
 void stati(struct inode *ip, struct stat *st) {
   st->dev = ip->dev;
   st->ino = ip->inum;
-  st->type = ip->type << 14;
+  st->mode = ip->type << 14;
   st->nlink = ip->nlink;
   st->size = ip->size;
 }
