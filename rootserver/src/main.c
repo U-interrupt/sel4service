@@ -212,7 +212,7 @@ void *main_continued(void *arg UNUSED) {
 
   argv[0] = "./sqlite-bench";
   argv[1] = "--benchmarks=readseq";
-  argv[2] = "--num=1";
+  argv[2] = "--num=10000";
   sel4utils_create_word_args(string_args, &argv[3], 2, env.app.init_vaddr,
                              sqlite3_mem);
   sel4utils_spawn_process_v(&env.app.proc, &env.vka, &env.vspace, 5, argv, 1);

@@ -321,7 +321,7 @@ uint64 xv6fs_open() {
     return -1;
   // begin_op();
 
-  printf("[xv6fs] open %s 0o%o\n", path, omode);
+  // printf("[xv6fs] open %s 0o%o\n", path, omode);
 
   if (omode & O_CREAT) {
     ip = create(path, T_FILE, 0, 0);
@@ -454,7 +454,7 @@ uint64 xv6fs_lstat(void) {
   if ((n = argstr(0, path, MAXPATH)) < 0)
     return -EINVAL;
 
-  printf("[xv6fs] lstat %s\n", path);
+  // printf("[xv6fs] lstat %s\n", path);
 
   if ((ip = namei(path)) == 0) {
     return -ENOENT;

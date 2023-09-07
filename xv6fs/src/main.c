@@ -111,7 +111,7 @@ int main(int argc, char **argv) {
       ZF_LOGE("FS call unimplemented!");
       break;
     }
-    printf("[xv6fs] return %d\n", ret);
+    // printf("[xv6fs] return %d\n", ret);
     info = seL4_MessageInfo_new(seL4_MessageInfo_get_label(info), 0, 0, 1);
     seL4_SetMR(0, ret);
     seL4_Reply(info);
