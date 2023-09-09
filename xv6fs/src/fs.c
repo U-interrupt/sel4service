@@ -110,6 +110,7 @@ static void init_balloc(int used) {
   wsect(sb.bmapstart, buf);
 }
 
+// we only care about indirect blocks here
 static void iappend(uint inum, void *xp, int n) {
   char *p = (char *)xp;
   uint fbn, off, n1;
@@ -172,10 +173,10 @@ static void create_image(void) {
   sb.inodestart = xint(2 + nlog);
   sb.bmapstart = xint(2 + nlog + ninodeblocks);
 
-  printf("[xv6fs] nmeta %d (boot, super, log blocks %u inode blocks %u, bitmap "
-         "blocks "
-         "%u) blocks %d total %d\n",
-         nmeta, nlog, ninodeblocks, nbitmap, nblocks, FSSIZE);
+  // printf("[xv6fs] nmeta %d (boot, super, log blocks %u inode blocks %u, bitmap "
+  //        "blocks "
+  //        "%u) blocks %d total %d\n",
+  //        nmeta, nlog, ninodeblocks, nbitmap, nblocks, FSSIZE);
 
   freeblock = nmeta; // the first free block that we can allocate
 
@@ -529,8 +530,8 @@ void iunlockput(struct inode *ip) {
 // If there is no such block, bmap allocates one.
 // returns 0 if out of disk space.
 static uint bmap(struct inode *ip, uint bn) {
-  uint addr, *a;
-  struct buf *bp;
+  uint addr, *a, *indirect, *indirect2;
+  struct buf *bp, *bp2;
 
   if (bn < NDIRECT) {
     if ((addr = ip->addrs[bn]) == 0) {
@@ -563,6 +564,40 @@ static uint bmap(struct inode *ip, uint bn) {
     brelse(bp);
     return addr;
   }
+  bn -= NINDIRECT;
+
+  if (bn < NINDIRECT2) {
+    if ((addr = ip->addrs[NDIRECT + 1]) == 0) {
+      addr = balloc(ip->dev);
+      if (addr == 0)
+        return 0;
+      ip->addrs[NDIRECT + 1] = addr;
+    }
+    bp = bread(ip->dev, addr);
+    indirect = (uint *)bp->data;
+    if ((addr = indirect[bn / NINDIRECT]) == 0) {
+      addr = balloc(ip->dev);
+      if (addr == 0) {
+        brelse(bp);
+        return 0;
+      }
+      indirect[bn / NINDIRECT] = addr;
+    }
+    bp2 = bread(ip->dev, addr);
+    indirect2 = (uint *)bp2->data;
+    if ((addr = indirect2[bn % NINDIRECT]) == 0) {
+      addr = balloc(ip->dev);
+      if (addr == 0) {
+        brelse(bp2);
+        brelse(bp);
+        return 0;
+      }
+      indirect2[bn % NINDIRECT] = addr;
+    }
+    brelse(bp2);
+    brelse(bp);
+    return addr;
+  }
 
   panic("bmap: out of range");
 }
@@ -571,8 +606,8 @@ static uint bmap(struct inode *ip, uint bn) {
 // Caller must hold ip->lock.
 void itrunc(struct inode *ip) {
   int i, j;
-  struct buf *bp;
-  uint *a;
+  struct buf *bp, *bp2;
+  uint *a, *indirect, *indirect2;
 
   for (i = 0; i < NDIRECT; i++) {
     if (ip->addrs[i]) {
@@ -590,6 +625,25 @@ void itrunc(struct inode *ip) {
     }
     brelse(bp);
     bfree(ip->dev, ip->addrs[NDIRECT]);
+    ip->addrs[NDIRECT] = 0;
+  }
+
+  if (ip->addrs[NDIRECT + 1]) {
+    bp = bread(ip->dev, ip->addrs[NDIRECT + 1]);
+    indirect = (uint *)bp->data;
+    for (i = 0; i < NINDIRECT; i++) {
+      if (indirect[i]) {
+        bp2 = bread(ip->dev, indirect[i]);
+        indirect2 = (uint *)bp2->data;
+        for (j = 0; j < NINDIRECT; j++)
+          if (indirect2[j])
+            bfree(ip->dev, indirect2[j]);
+        brelse(bp2);
+        bfree(ip->dev, indirect[i]);
+      }
+    }
+    brelse(bp);
+    bfree(ip->dev, ip->addrs[NDIRECT + 1]);
     ip->addrs[NDIRECT] = 0;
   }
 
@@ -651,8 +705,10 @@ int writei(struct inode *ip, int user_src, uint64 src, uint off, uint n) {
   // if (off > ip->size || off + n < off)
   if (off + n < off) // leave data hole if off > size
     return -1;
-  if (off + n > MAXFILE * BSIZE)
+  if (off + n > MAXFILE * BSIZE) {
+    printf("Exceed MAXFILE\n");
     return -1;
+  }
 
   for (tot = 0; tot < n; tot += m, off += m, src += m) {
     uint addr = bmap(ip, off / BSIZE);

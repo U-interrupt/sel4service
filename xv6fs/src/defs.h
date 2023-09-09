@@ -49,7 +49,7 @@ typedef unsigned long uint64;
 #define MAXOPBLOCKS 10            // max # of blocks any FS op writes
 #define LOGSIZE (MAXOPBLOCKS * 3) // max data blocks in on-disk log
 #define NBUF (MAXOPBLOCKS * 3)    // size of disk block cache
-#define FSSIZE 8 * 1024           // size of file system in blocks
+#define FSSIZE 32 * 1024           // size of file system in blocks
 #define MAXPATH 128               // maximum file path name
 
 // stat.h
@@ -58,22 +58,22 @@ typedef unsigned long uint64;
 #define T_DEVICE 3 // Device
 
 struct stat {
-  dev_t dev;         /* ID of device containing file */
-  ino_t ino;         /* inode number */
-  mode_t mode;       /* protection */
-  nlink_t nlink;     /* number of hard links */
-  uid_t uid;         /* user ID of owner */
-  gid_t gid;         /* group ID of owner */
-  dev_t rdev;        /* device ID (if special file) */
-	long long __st_rdev_padding;
+  dev_t dev;     /* ID of device containing file */
+  ino_t ino;     /* inode number */
+  mode_t mode;   /* protection */
+  nlink_t nlink; /* number of hard links */
+  uid_t uid;     /* user ID of owner */
+  gid_t gid;     /* group ID of owner */
+  dev_t rdev;    /* device ID (if special file) */
+  long long __st_rdev_padding;
   off_t size;        /* total size, in bytes */
   blksize_t blksize; /* blocksize for file system I/O */
-	int __st_blksize_padding;
-  blkcnt_t blocks;   /* number of 512B blocks allocated */
-  time_t atime[2];      /* time of last access */
-  time_t mtime[2];      /* time of last modification */
-  time_t ctime[2];      /* time of last status change */
-	unsigned __unused[2];
+  int __st_blksize_padding;
+  blkcnt_t blocks; /* number of 512B blocks allocated */
+  time_t atime[2]; /* time of last access */
+  time_t mtime[2]; /* time of last modification */
+  time_t ctime[2]; /* time of last status change */
+  unsigned __unused[2];
 };
 
 // fs.h
@@ -102,18 +102,19 @@ struct superblock {
 
 #define FSMAGIC 0x10203040
 
-#define NDIRECT 12
+#define NDIRECT 11
 #define NINDIRECT (BSIZE / sizeof(uint))
-#define MAXFILE (NDIRECT + NINDIRECT)
+#define NINDIRECT2 NINDIRECT *NINDIRECT
+#define MAXFILE (NDIRECT + NINDIRECT + NINDIRECT2)
 
 // On-disk inode structure
 struct dinode {
-  short type;              // File type
-  short major;             // Major device number (T_DEVICE only)
-  short minor;             // Minor device number (T_DEVICE only)
-  short nlink;             // Number of links to inode in file system
-  uint size;               // Size of file (bytes)
-  uint addrs[NDIRECT + 1]; // Data block addresses
+  short type;                  // File type
+  short major;                 // Major device number (T_DEVICE only)
+  short minor;                 // Minor device number (T_DEVICE only)
+  short nlink;                 // Number of links to inode in file system
+  uint size;                   // Size of file (bytes)
+  uint addrs[NDIRECT + 1 + 1]; // Data block addresses
 };
 
 // Inodes per block.
@@ -164,7 +165,7 @@ struct inode {
   short minor;
   short nlink;
   uint size;
-  uint addrs[NDIRECT + 1];
+  uint addrs[NDIRECT + 1 + 1];
 };
 
 // map major device number to device functions.

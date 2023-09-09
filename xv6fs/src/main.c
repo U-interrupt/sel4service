@@ -9,6 +9,7 @@
 #include <service/env.h>
 
 #include "defs.h"
+#include "service/syscall.h"
 
 static seL4_CPtr client_ep;
 static seL4_CPtr server_ep;
@@ -54,6 +55,7 @@ int main(int argc, char **argv) {
   /* read in init data */
   init_data = (void *)atol(argv[1]);
   assert(init_data->magic == 0xdeadbeef);
+  setup_init_data(init_data);
   client_ep = init_data->client_ep;
   server_ep = init_data->server_ep;
 
@@ -68,11 +70,23 @@ int main(int argc, char **argv) {
   fsinit(ROOTDEV);
   printf("[xv6fs] fs initialized successfully\n");
 
+  while(1);
+
   while (1) {
 #ifdef TEST_NORMAL
     int ret;
     seL4_MessageInfo_t info = seL4_Recv(client_ep, NULL);
     switch (seL4_MessageInfo_get_label(info)) {
+#elif defined(TEST_POLL)
+    int label, ret;
+    acquire(init_data->client_lk);
+    argint(-1, &label);
+    if (label == FS_RET) {
+      release(init_data->client_lk);
+      continue;
+    }
+    switch (label) {
+#endif
     case FS_OPEN:
       ret = xv6fs_open();
       break;
@@ -111,10 +125,16 @@ int main(int argc, char **argv) {
       ZF_LOGE("FS call unimplemented!");
       break;
     }
+#ifdef TEST_NORMAL
     // printf("[xv6fs] return %d\n", ret);
     info = seL4_MessageInfo_new(seL4_MessageInfo_get_label(info), 0, 0, 1);
     seL4_SetMR(0, ret);
     seL4_Reply(info);
+#elif defined(TEST_POLL)
+    seL4_Word *buf = init_data->client_buf;
+    buf[0] = FS_RET;
+    buf[1] = ret;
+    release(init_data->client_lk);
 #endif
   }
 
