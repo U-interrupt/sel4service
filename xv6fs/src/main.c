@@ -30,6 +30,7 @@ static size_t write_buf(void *data, size_t count) {
   return count;
 }
 
+#ifdef TEST_NORMAL
 void disk_rw(void *buf, int blockno, int write) {
   if (write) {
     seL4_MessageInfo_t info = seL4_MessageInfo_new(DISK_WRITE, 0, 0, 1);
@@ -43,10 +44,35 @@ void disk_rw(void *buf, int blockno, int write) {
     seL4_SetMR(0, blockno);
     info = seL4_Call(server_ep, info);
     if (seL4_GetMR(0))
-      panic("Failed to write block");
+      panic("Failed to read block");
     memmove(buf, init_data->server_buf, BSIZE);
   }
 }
+#elif defined (TEST_POLL)
+void disk_rw(void *buf, int blockno, int write) {
+  if (write) {
+    seL4_Word *server_buf = init_data->server_buf;
+    acquire(init_data->server_lk);
+    server_buf[0] = DISK_WRITE;
+    server_buf[1] = blockno;
+    memmove(&server_buf[2], buf, BSIZE);
+    release(init_data->server_lk);
+    if (Call(server_buf))
+      panic("Failed to write block");
+  } else {
+    seL4_Word *server_buf = init_data->server_buf;
+    acquire(init_data->server_lk);
+    server_buf[0] = DISK_READ;
+    server_buf[1] = blockno;
+    release(init_data->server_lk);
+    Wait(server_buf);
+    if (server_buf[1])
+      panic("Failed to read block");
+    memmove(buf, &server_buf[2], BSIZE);
+    release(init_data->server_lk);
+  }
+}
+#endif
 
 int main(int argc, char **argv) {
   sel4muslcsys_register_stdio_write_fn(write_buf);
@@ -70,23 +96,20 @@ int main(int argc, char **argv) {
   fsinit(ROOTDEV);
   printf("[xv6fs] fs initialized successfully\n");
 
-  while(1);
-
   while (1) {
-#ifdef TEST_NORMAL
-    int ret;
-    seL4_MessageInfo_t info = seL4_Recv(client_ep, NULL);
-    switch (seL4_MessageInfo_get_label(info)) {
-#elif defined(TEST_POLL)
     int label, ret;
+#ifdef TEST_NORMAL
+    seL4_MessageInfo_t info = seL4_Recv(client_ep, NULL);
+    label = seL4_MessageInfo_get_label(info);
+#elif defined(TEST_POLL)
     acquire(init_data->client_lk);
     argint(-1, &label);
     if (label == FS_RET) {
       release(init_data->client_lk);
       continue;
     }
-    switch (label) {
 #endif
+    switch (label) {
     case FS_OPEN:
       ret = xv6fs_open();
       break;
@@ -122,11 +145,10 @@ int main(int argc, char **argv) {
       break;
     default:
       ret = -EINVAL;
-      ZF_LOGE("FS call unimplemented!");
       break;
     }
+    // printf("[xv6fs] FS call %d return %d\n", label, ret);
 #ifdef TEST_NORMAL
-    // printf("[xv6fs] return %d\n", ret);
     info = seL4_MessageInfo_new(seL4_MessageInfo_get_label(info), 0, 0, 1);
     seL4_SetMR(0, ret);
     seL4_Reply(info);

@@ -199,9 +199,14 @@ static void stop(const char* name) {
     }
   }
 
-  fprintf(stderr, "%-12s : %11.3f micros/op;%s%s\n",
+  /* On RISC-V, rdtime causes trap, so we get the additional time out of the result */
+  double first =  now_micros() * 1e-6;
+  double fix = now_micros() * 1e-6 - first;
+
+  fprintf(stderr, "%-12s : %11.3f micros/op (gettime() itself causes %.3f micros);%s%s\n",
           name,
-          (finish - start_) * 1e6 / done_,
+          (finish - start_ - fix) * 1e6 / done_,
+          fix * 1e6,
           (!message_ || !strcmp(message_, "") ? "" : " "),
           (!message_) ? "" : message_);
   if (FLAGS_raw) {
@@ -266,16 +271,19 @@ void benchmark_run() {
     bool known = true;
     bool write_sync = false;
     if (!strcmp(name, "fillseq")) {
-      benchmark_write(write_sync, SEQUENTIAL, FRESH, num_, FLAGS_value_size, 1);
+      // benchmark_write(write_sync, SEQUENTIAL, FRESH, num_, FLAGS_value_size, 1);
+      benchmark_write(write_sync, SEQUENTIAL, EXISTING, num_, FLAGS_value_size, 1);
       wal_checkpoint(db_);
     } else if (!strcmp(name, "fillseqbatch")) {
-      benchmark_write(write_sync, SEQUENTIAL, FRESH, num_, FLAGS_value_size, 1000);
+      // benchmark_write(write_sync, SEQUENTIAL, FRESH, num_, FLAGS_value_size, 1000);
+      benchmark_write(write_sync, SEQUENTIAL, EXISTING, num_, FLAGS_value_size, 1000);
       wal_checkpoint(db_);
     } else if (!strcmp(name, "fillrandom")) {
-      benchmark_write(write_sync, RANDOM, FRESH, num_, FLAGS_value_size, 1);
+      // benchmark_write(write_sync, RANDOM, FRESH, num_, FLAGS_value_size, 1);
+      benchmark_write(write_sync, RANDOM, EXISTING, num_, FLAGS_value_size, 1);
       wal_checkpoint(db_);
     } else if (!strcmp(name, "fillrandbatch")) {
-      benchmark_write(write_sync, RANDOM, FRESH, num_, FLAGS_value_size, 1000);
+      benchmark_write(write_sync, RANDOM, EXISTING, num_, FLAGS_value_size, 1000);
       wal_checkpoint(db_);
     } else if (!strcmp(name, "overwrite")) {
       benchmark_write(write_sync, RANDOM, EXISTING, num_, FLAGS_value_size, 1);
@@ -285,17 +293,21 @@ void benchmark_run() {
       wal_checkpoint(db_);
     } else if (!strcmp(name, "fillrandsync")) {
       write_sync = true;
-      benchmark_write(write_sync, RANDOM, FRESH, num_ / 100, FLAGS_value_size, 1);
+      // benchmark_write(write_sync, RANDOM, FRESH, num_ / 100, FLAGS_value_size, 1);
+      benchmark_write(write_sync, RANDOM, EXISTING, num_ / 100, FLAGS_value_size, 1);
       wal_checkpoint(db_);
     } else if (!strcmp(name, "fillseqsync")) {
       write_sync = true;
-      benchmark_write(write_sync, SEQUENTIAL, FRESH, num_ / 100, FLAGS_value_size, 1);
+      // benchmark_write(write_sync, SEQUENTIAL, FRESH, num_ / 100, FLAGS_value_size, 1);
+      benchmark_write(write_sync, SEQUENTIAL, EXISTING, num_ / 100, FLAGS_value_size, 1);
       wal_checkpoint(db_);
     } else if (!strcmp(name, "fillrand100K")) {
-      benchmark_write(write_sync, RANDOM, FRESH, num_ / 1000, 100 * 1000, 1);
+      // benchmark_write(write_sync, RANDOM, FRESH, num_ / 1000, 100 * 1000, 1);
+      benchmark_write(write_sync, RANDOM, EXISTING, num_ / 1000, 100 * 1000, 1);
       wal_checkpoint(db_);
     } else if (!strcmp(name, "fillseq100K")) {
-      benchmark_write(write_sync, SEQUENTIAL, FRESH, num_ / 1000, 100 * 1000, 1);
+      // benchmark_write(write_sync, SEQUENTIAL, FRESH, num_ / 1000, 100 * 1000, 1);
+      benchmark_write(write_sync, SEQUENTIAL, EXISTING, num_ / 1000, 100 * 1000, 1);
       wal_checkpoint(db_);
     } else if (!strcmp(name, "readseq")) {
       benchmark_read(SEQUENTIAL, 1);
@@ -334,7 +346,7 @@ void benchmark_open() {
             db_num_);
   status = sqlite3_config(SQLITE_CONFIG_SINGLETHREAD);
   if (status) {
-    fprintf(stderr, "cofnig error: %s\n", sqlite3_errmsg(db_));
+    fprintf(stderr, "config error: %s\n", sqlite3_errmsg(db_));
     exit(1);
   }
   status = sqlite3_open(file_name, &db_);

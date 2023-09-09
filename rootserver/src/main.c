@@ -175,22 +175,42 @@ void *main_continued(void *arg UNUSED) {
       &env.app.proc, &env.vka, env.app_fs_ep.cptr);
 
   env.app_fs_buf =
-      vspace_new_pages(&env.vspace, seL4_AllRights, 1, PAGE_BITS_4K);
+      vspace_new_pages(&env.vspace, seL4_AllRights, 2, CUSTOM_IPC_BUFFER_BITS);
+  env.app.init->client_buf = NULL;
   env.app.init->server_buf =
-      vspace_share_mem(&env.vspace, &env.app.proc.vspace, env.app_fs_buf, 1,
-                       PAGE_BITS_4K, seL4_AllRights, 1);
+      vspace_share_mem(&env.vspace, &env.app.proc.vspace, env.app_fs_buf, 2,
+                       CUSTOM_IPC_BUFFER_BITS, seL4_AllRights, 1);
   env.fs.init->client_buf =
-      vspace_share_mem(&env.vspace, &env.fs.proc.vspace, env.app_fs_buf, 1,
-                       PAGE_BITS_4K, seL4_AllRights, 1);
+      vspace_share_mem(&env.vspace, &env.fs.proc.vspace, env.app_fs_buf, 2,
+                       CUSTOM_IPC_BUFFER_BITS, seL4_AllRights, 1);
 
   env.fs_ram_buf =
-      vspace_new_pages(&env.vspace, seL4_AllRights, 1, PAGE_BITS_4K);
+      vspace_new_pages(&env.vspace, seL4_AllRights, 2, CUSTOM_IPC_BUFFER_BITS);
   env.fs.init->server_buf =
-      vspace_share_mem(&env.vspace, &env.fs.proc.vspace, env.fs_ram_buf, 1,
-                       PAGE_BITS_4K, seL4_AllRights, 1);
+      vspace_share_mem(&env.vspace, &env.fs.proc.vspace, env.fs_ram_buf, 2,
+                       CUSTOM_IPC_BUFFER_BITS, seL4_AllRights, 1);
   env.ramdisk.init->client_buf =
-      vspace_share_mem(&env.vspace, &env.ramdisk.proc.vspace, env.fs_ram_buf, 1,
-                       PAGE_BITS_4K, seL4_AllRights, 1);
+      vspace_share_mem(&env.vspace, &env.ramdisk.proc.vspace, env.fs_ram_buf, 2,
+                       CUSTOM_IPC_BUFFER_BITS, seL4_AllRights, 1);
+  env.ramdisk.init->server_buf = NULL;
+
+#ifdef TEST_POLL
+  /* shared spinlock at the start of app_fs_buf */
+  env.app.init->client_lk = NULL;
+  env.app.init->server_lk = (spinlock_t)env.app.init->server_buf;
+  env.fs.init->client_lk = (spinlock_t)env.fs.init->client_buf;
+  env.app.init->server_buf += sizeof(struct spinlock);
+  env.fs.init->client_buf += sizeof(struct spinlock);
+  initlock(env.app.init->server_lk);
+
+  /* shared spinlock at the start of fs_ram_buf */
+  env.fs.init->server_lk = (spinlock_t)env.fs.init->server_buf;
+  env.ramdisk.init->client_lk = (spinlock_t)env.ramdisk.init->client_buf;
+  env.ramdisk.init->server_lk = NULL;
+  env.fs.init->server_buf += sizeof(struct spinlock);
+  env.ramdisk.init->client_buf += sizeof(struct spinlock);
+  initlock(env.fs.init->server_lk);
+#endif
 
   /* ramdisk can use 256 MB physical memory */
   seL4_CPtr ramdisk = alloc_untyped(&env, &env.ramdisk, 28);
@@ -212,7 +232,7 @@ void *main_continued(void *arg UNUSED) {
 
   argv[0] = "./sqlite-bench";
   argv[1] = "--benchmarks=readseq";
-  argv[2] = "--num=10000";
+  argv[2] = "--num=1000";
   sel4utils_create_word_args(string_args, &argv[3], 2, env.app.init_vaddr,
                              sqlite3_mem);
   sel4utils_spawn_process_v(&env.app.proc, &env.vka, &env.vspace, 5, argv, 1);

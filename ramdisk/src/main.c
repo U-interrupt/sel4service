@@ -11,6 +11,7 @@
 #include <sel4utils/util.h>
 #include <sel4utils/vspace.h>
 
+#include <service/env.h>
 #include <service/syscall.h>
 
 #define BSIZE 1024
@@ -39,6 +40,7 @@ int main(int argc, char **argv) {
   /* read in init data */
   init_data = (void *)atol(argv[1]);
   assert(init_data->magic == 0xdeadbeef);
+  setup_init_data(init_data);
   client_ep = init_data->client_ep;
 
   seL4_CPtr ram = (seL4_Word)atol(argv[2]);
@@ -57,8 +59,8 @@ int main(int argc, char **argv) {
   }
 
   while (1) {
+    int ret = 0, blockno, label = 0;
 #ifdef TEST_NORMAL
-    int ret = 0, blockno;
     seL4_MessageInfo_t info = seL4_Recv(client_ep, NULL);
     switch (seL4_MessageInfo_get_label(info)) {
     case DISK_INIT:
@@ -83,6 +85,39 @@ int main(int argc, char **argv) {
     }
     seL4_SetMR(0, ret);
     seL4_Reply(info);
+#elif defined(TEST_POLL)
+    seL4_Word *buf;
+    acquire(init_data->client_lk);
+    argint(-1, &label);
+    if (!label) {
+      release(init_data->client_lk);
+      continue;
+    }
+    switch (label) {
+    case DISK_INIT:
+      printf("[ramdisk] initialize xv6fs \n");
+      break;
+    case DISK_READ:
+      buf = init_data->client_buf;
+      blockno = buf[1];
+      // printf("[ramdisk] read %d\n", blockno);
+      memmove(&buf[2], (void *)RAMDISK_BASE + blockno * BSIZE,
+              BSIZE);
+      break;
+    case DISK_WRITE:
+      buf = init_data->client_buf;
+      blockno = buf[1];
+      // printf("[ramdisk] write %d\n", blockno);
+      memmove((void *)RAMDISK_BASE + blockno * BSIZE, &buf[2],
+              BSIZE);
+      break;
+    default:
+      ret = -EINVAL;
+      break;
+    }
+    buf[0] = 0;
+    buf[1] = ret;
+    release(init_data->client_lk);
 #endif
   }
 
