@@ -150,6 +150,7 @@ int main(int argc, char **argv) {
     if (label == FS_RET) {
       release(init_data->client_lk);
       continue;
+    }
 #elif defined(TEST_UINTR)
     seL4_Word badge;
     seL4_UintrNBRecv(&badge);
@@ -204,10 +205,10 @@ int main(int argc, char **argv) {
     seL4_SetMR(0, ret);
     seL4_Reply(info);
 #elif defined(TEST_POLL)
-      seL4_Word *buf = init_data->client_buf;
-      buf[0] = FS_RET;
-      buf[1] = ret;
-      release(init_data->client_lk);
+    seL4_Word *buf = init_data->client_buf;
+    buf[0] = FS_RET;
+    buf[1] = ret;
+    release(init_data->client_lk);
 #elif defined(TEST_UINTR)
     seL4_Word *buf = init_data->client_buf;
     buf[0] = FS_RET;
