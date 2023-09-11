@@ -155,7 +155,6 @@ void print_usage(const char *argv0) {
                   "in async mode\n");
 }
 
-static seL4_CPtr server_ep;
 static init_data_t init_data;
 
 /* start at a virtual address below KERNEL_RESERVED_START */
@@ -184,7 +183,13 @@ int main(int argc, char **argv) {
     vaddr += (1u << seL4_LargePageBits);
   }
 
-  init_syscall_table(init_data->server_ep, init_data);
+  init_syscall_table();
+  setup_init_data(init_data);
+#ifdef TEST_NORMAL
+  setup_server_ep(init_data->server_ep);
+#elif defined(TEST_UINTR)
+  setup_server_uintr(init_data->server_uintr);
+#endif
 
   /* =========================== */
 

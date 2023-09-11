@@ -9,11 +9,15 @@
 #include <service/env.h>
 
 #include "defs.h"
-#include "service/syscall.h"
 
+static init_data_t init_data;
+#ifdef TEST_NORMAL
 static seL4_CPtr client_ep;
 static seL4_CPtr server_ep;
-static init_data_t init_data;
+#elif defined(TEST_UINTR)
+static int client_index;
+static int server_index;
+#endif
 
 static struct client *curr_client = NULL;
 
@@ -48,7 +52,7 @@ void disk_rw(void *buf, int blockno, int write) {
     memmove(buf, init_data->server_buf, BSIZE);
   }
 }
-#elif defined (TEST_POLL)
+#elif defined(TEST_POLL)
 void disk_rw(void *buf, int blockno, int write) {
   if (write) {
     seL4_Word *server_buf = init_data->server_buf;
@@ -72,6 +76,39 @@ void disk_rw(void *buf, int blockno, int write) {
     release(init_data->server_lk);
   }
 }
+#elif defined(TEST_UINTR)
+static void CallBadged() {
+  seL4_Word badge;
+  seL4_UintrSend(server_index);
+  while (1) {
+    seL4_UintrNBRecv(&badge);
+    /* write the pending bits back */
+    if (badge & 1)
+      uipi_write(1);
+    if (badge & 2)
+      break;
+  }
+}
+
+void disk_rw(void *buf, int blockno, int write) {
+  if (write) {
+    seL4_Word *server_buf = init_data->server_buf;
+    server_buf[0] = DISK_WRITE;
+    server_buf[1] = blockno;
+    memmove(&server_buf[2], buf, BSIZE);
+    CallBadged();
+    if (server_buf[1])
+      panic("Failed to write block");
+  } else {
+    seL4_Word *server_buf = init_data->server_buf;
+    server_buf[0] = DISK_READ;
+    server_buf[1] = blockno;
+    CallBadged();
+    if (server_buf[1])
+      panic("Failed to read block");
+    memmove(buf, &server_buf[2], BSIZE);
+  }
+}
 #endif
 
 int main(int argc, char **argv) {
@@ -82,8 +119,14 @@ int main(int argc, char **argv) {
   init_data = (void *)atol(argv[1]);
   assert(init_data->magic == 0xdeadbeef);
   setup_init_data(init_data);
+
+#ifdef TEST_NORMAL
   client_ep = init_data->client_ep;
   server_ep = init_data->server_ep;
+#elif defined(TEST_UINTR)
+  client_index = seL4_RISCV_Uintr_RegisterSender(init_data->client_uintr).index;
+  server_index = seL4_RISCV_Uintr_RegisterSender(init_data->server_uintr).index;
+#endif
 
   curr_client = (struct client *)malloc(sizeof(struct client));
   curr_client->cwd = namei("/");
@@ -107,7 +150,15 @@ int main(int argc, char **argv) {
     if (label == FS_RET) {
       release(init_data->client_lk);
       continue;
-    }
+#elif defined(TEST_UINTR)
+    seL4_Word badge;
+    seL4_UintrNBRecv(&badge);
+    /* write the pending bits back */
+    if (badge & 2)
+      uipi_write(2);
+    if ((badge & 1) == 0)
+      continue;
+    argint(-1, &label);
 #endif
     switch (label) {
     case FS_OPEN:
@@ -153,10 +204,15 @@ int main(int argc, char **argv) {
     seL4_SetMR(0, ret);
     seL4_Reply(info);
 #elif defined(TEST_POLL)
+      seL4_Word *buf = init_data->client_buf;
+      buf[0] = FS_RET;
+      buf[1] = ret;
+      release(init_data->client_lk);
+#elif defined(TEST_UINTR)
     seL4_Word *buf = init_data->client_buf;
     buf[0] = FS_RET;
     buf[1] = ret;
-    release(init_data->client_lk);
+    seL4_UintrSend(client_index);
 #endif
   }
 

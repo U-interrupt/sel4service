@@ -21,7 +21,6 @@
 /* this address is a hack to vspace, do not change it !*/
 #define RAMDISK_BASE 0x20000000
 
-static seL4_CPtr client_ep;
 static init_data_t init_data;
 
 void __plat_putchar(int c);
@@ -41,7 +40,6 @@ int main(int argc, char **argv) {
   init_data = (void *)atol(argv[1]);
   assert(init_data->magic == 0xdeadbeef);
   setup_init_data(init_data);
-  client_ep = init_data->client_ep;
 
   seL4_CPtr ram = (seL4_Word)atol(argv[2]);
   int error = seL4_Untyped_Retype(ram, seL4_RISCV_Mega_Page, seL4_LargePageBits,
@@ -58,9 +56,14 @@ int main(int argc, char **argv) {
     vaddr += (1u << seL4_LargePageBits);
   }
 
+#ifdef TEST_UINTR
+  int client_index = seL4_RISCV_Uintr_RegisterSender(init_data->client_uintr).index;
+#endif
+
   while (1) {
     int ret = 0, blockno, label = 0;
 #ifdef TEST_NORMAL
+    seL4_CPtr client_ep = init_data->client_ep;
     seL4_MessageInfo_t info = seL4_Recv(client_ep, NULL);
     switch (seL4_MessageInfo_get_label(info)) {
     case DISK_INIT:
@@ -118,6 +121,38 @@ int main(int argc, char **argv) {
     buf[0] = 0;
     buf[1] = ret;
     release(init_data->client_lk);
+#elif defined(TEST_UINTR)
+    seL4_Word *buf = init_data->client_buf;
+    seL4_Word badge;
+    while (1) {
+      seL4_UintrNBRecv(&badge);
+      if (badge)
+        break;
+    }
+    argint(-1, &label);
+    switch (label) {
+    case DISK_INIT:
+      printf("[ramdisk] initialize xv6fs \n");
+      break;
+    case DISK_READ:
+      blockno = buf[1];
+      // printf("[ramdisk] read %d\n", blockno);
+      memmove(&buf[2], (void *)RAMDISK_BASE + blockno * BSIZE,
+              BSIZE);
+      break;
+    case DISK_WRITE:
+      blockno = buf[1];
+      // printf("[ramdisk] write %d\n", blockno);
+      memmove((void *)RAMDISK_BASE + blockno * BSIZE, &buf[2],
+              BSIZE);
+      break;
+    default:
+      ret = -EINVAL;
+      break;
+    }
+    buf[0] = 0;
+    buf[1] = ret;
+    seL4_UintrSend(client_index);
 #endif
   }
 

@@ -7,6 +7,8 @@
 
 #include <cpio/cpio.h>
 
+#include <sel4/sel4.h>
+
 #include <sel4platsupport/bootinfo.h>
 #include <sel4platsupport/io.h>
 #include <sel4platsupport/platsupport.h>
@@ -19,6 +21,10 @@
 #include <simple/simple.h>
 
 #include <vspace/vspace.h>
+
+#include <vka/capops.h>
+#include <vka/object.h>
+#include <vka/vka.h>
 
 #include <service/env.h>
 
@@ -160,20 +166,6 @@ void *main_continued(void *arg UNUSED) {
   config_app(&env, &env.fs, "xv6fs", 2);
   config_app(&env, &env.app, "sqlite3", 3);
 
-  vka_alloc_endpoint(&env.vka, &env.app_fs_ep);
-  vka_alloc_endpoint(&env.vka, &env.fs_ram_ep);
-
-  env.ramdisk.init->client_ep = sel4utils_copy_cap_to_process(
-      &env.ramdisk.proc, &env.vka, env.fs_ram_ep.cptr);
-  env.ramdisk.init->server_ep = seL4_CapNull;
-  env.fs.init->client_ep =
-      sel4utils_copy_cap_to_process(&env.fs.proc, &env.vka, env.app_fs_ep.cptr);
-  env.fs.init->server_ep =
-      sel4utils_copy_cap_to_process(&env.fs.proc, &env.vka, env.fs_ram_ep.cptr);
-  env.app.init->client_ep = seL4_CapNull;
-  env.app.init->server_ep = sel4utils_copy_cap_to_process(
-      &env.app.proc, &env.vka, env.app_fs_ep.cptr);
-
   env.app_fs_buf =
       vspace_new_pages(&env.vspace, seL4_AllRights, 2, CUSTOM_IPC_BUFFER_BITS);
   env.app.init->client_buf = NULL;
@@ -194,7 +186,21 @@ void *main_continued(void *arg UNUSED) {
                        CUSTOM_IPC_BUFFER_BITS, seL4_AllRights, 1);
   env.ramdisk.init->server_buf = NULL;
 
-#ifdef TEST_POLL
+#ifdef TEST_NORMAL
+  vka_alloc_endpoint(&env.vka, &env.app_fs_ep);
+  vka_alloc_endpoint(&env.vka, &env.fs_ram_ep);
+
+  env.ramdisk.init->client_ep = sel4utils_copy_cap_to_process(
+      &env.ramdisk.proc, &env.vka, env.fs_ram_ep.cptr);
+  env.ramdisk.init->server_ep = seL4_CapNull;
+  env.fs.init->client_ep =
+      sel4utils_copy_cap_to_process(&env.fs.proc, &env.vka, env.app_fs_ep.cptr);
+  env.fs.init->server_ep =
+      sel4utils_copy_cap_to_process(&env.fs.proc, &env.vka, env.fs_ram_ep.cptr);
+  env.app.init->client_ep = seL4_CapNull;
+  env.app.init->server_ep = sel4utils_copy_cap_to_process(
+      &env.app.proc, &env.vka, env.app_fs_ep.cptr);
+#elif defined(TEST_POLL)
   /* shared spinlock at the start of app_fs_buf */
   env.app.init->client_lk = NULL;
   env.app.init->server_lk = (spinlock_t)env.app.init->server_buf;
@@ -210,6 +216,35 @@ void *main_continued(void *arg UNUSED) {
   env.fs.init->server_buf += sizeof(struct spinlock);
   env.ramdisk.init->client_buf += sizeof(struct spinlock);
   initlock(env.fs.init->server_lk);
+#elif defined(TEST_UINTR)
+  vka_alloc_object(&env.vka, seL4_RISCV_UintrObject, seL4_UintrBits,
+                   &env.app_uintr);
+  vka_alloc_object(&env.vka, seL4_RISCV_UintrObject, seL4_UintrBits,
+                   &env.fs_uintr);
+  vka_alloc_object(&env.vka, seL4_RISCV_UintrObject, seL4_UintrBits,
+                   &env.ram_uintr);
+
+  /* ramdisk->fs: badge = 1 << 1; uintr -> fs: badge = 1 << 0 */
+  cspacepath_t uintr_path, badged_uintr;
+  vka_cspace_make_path(&env.vka, env.fs_uintr.cptr, &uintr_path);
+  vka_cspace_alloc_path(&env.vka, &badged_uintr);
+  vka_cnode_mint(&badged_uintr, &uintr_path, seL4_AllRights, 1);
+  env.ramdisk.init->client_uintr = sel4utils_copy_cap_to_process(
+      &env.ramdisk.proc, &env.vka, badged_uintr.capPtr);
+  env.ramdisk.init->server_uintr = seL4_CapNull;
+  env.fs.init->client_uintr =
+      sel4utils_copy_cap_to_process(&env.fs.proc, &env.vka, env.app_uintr.cptr);
+  env.fs.init->server_uintr =
+      sel4utils_copy_cap_to_process(&env.fs.proc, &env.vka, env.ram_uintr.cptr);
+  env.app.init->client_uintr = seL4_CapNull;
+  env.app.init->server_uintr =
+      sel4utils_copy_cap_to_process(&env.app.proc, &env.vka, env.fs_uintr.cptr);
+
+  seL4_TCB_BindUintr(sel4utils_get_tcb(&env.app.proc.thread),
+                     env.app_uintr.cptr);
+  seL4_TCB_BindUintr(sel4utils_get_tcb(&env.fs.proc.thread), env.fs_uintr.cptr);
+  seL4_TCB_BindUintr(sel4utils_get_tcb(&env.ramdisk.proc.thread),
+                     env.ram_uintr.cptr);
 #endif
 
   /* ramdisk can use 256 MB physical memory */
@@ -242,7 +277,7 @@ void *main_continued(void *arg UNUSED) {
 
 /* When the root task exists, it should simply suspend itself */
 static void root_exit(int code) {
-  printf("sel4service rootserver suspends\n");
+  // printf("sel4service rootserver suspends\n");
   seL4_TCB_Suspend(seL4_CapInitThreadTCB);
 }
 
