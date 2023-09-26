@@ -15,7 +15,8 @@
 #include <service/syscall.h>
 
 #define BSIZE 1024
-#define MAX_RAMDISK_SIZE 256 * 1024 * 1024
+#define MAX_RAMDISK_PAGES 16
+#define MAX_RAMDISK_SIZE (MAX_RAMDISK_PAGES * 2 * 1024 * 1024)
 
 /* start at a virtual address below KERNEL_RESERVED_START */
 /* this address is a hack to vspace, do not change it !*/
@@ -44,11 +45,11 @@ int main(int argc, char **argv) {
   seL4_CPtr ram = (seL4_Word)atol(argv[2]);
   int error = seL4_Untyped_Retype(ram, seL4_RISCV_Mega_Page, seL4_LargePageBits,
                                   init_data->root_cnode, 0, 0,
-                                  init_data->free_slots.start, 128);
+                                  init_data->free_slots.start, MAX_RAMDISK_PAGES);
   ZF_LOGF_IF(error, "Failed to allocate frames");
   seL4_Word vaddr = RAMDISK_BASE;
   for (seL4_CPtr slot = init_data->free_slots.start;
-       slot < init_data->free_slots.start + 128; slot++) {
+       slot < init_data->free_slots.start + MAX_RAMDISK_PAGES; slot++) {
     error =
         seL4_RISCV_Page_Map(slot, init_data->page_directory, vaddr,
                             seL4_AllRights, seL4_RISCV_Default_VMAttributes);

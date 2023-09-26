@@ -248,7 +248,7 @@ void *main_continued(void *arg UNUSED) {
 #endif
 
   /* ramdisk can use 256 MB physical memory */
-  seL4_CPtr ramdisk = alloc_untyped(&env, &env.ramdisk, 28);
+  seL4_CPtr ramdisk = alloc_untyped(&env, &env.ramdisk, 25);
   env.ramdisk.init->free_slots.start++;
 
   argv[0] = "./ramdisk";
@@ -261,16 +261,12 @@ void *main_continued(void *arg UNUSED) {
   sel4utils_create_word_args(string_args, &argv[1], 1, env.fs.init_vaddr);
   sel4utils_spawn_process_v(&env.fs.proc, &env.vka, &env.vspace, 2, argv, 1);
 
-  /* sqlite3 can use 4 MB physical memory */
-  seL4_CPtr sqlite3_mem = alloc_untyped(&env, &env.app, 28);
-  env.app.init->free_slots.start++;
 
   argv[0] = "./sqlite-bench";
-  argv[1] = "--benchmarks=readseq";
+  argv[1] = "--benchmarks=readrandom";
   argv[2] = "--num=1000";
-  sel4utils_create_word_args(string_args, &argv[3], 2, env.app.init_vaddr,
-                             sqlite3_mem);
-  sel4utils_spawn_process_v(&env.app.proc, &env.vka, &env.vspace, 5, argv, 1);
+  sel4utils_create_word_args(string_args, &argv[3], 1, env.app.init_vaddr);
+  sel4utils_spawn_process_v(&env.app.proc, &env.vka, &env.vspace, 4, argv, 1);
 
   return 0;
 }
